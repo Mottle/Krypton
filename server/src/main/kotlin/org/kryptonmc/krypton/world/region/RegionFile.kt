@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.world.region
 
@@ -44,12 +43,7 @@ import kotlin.io.path.isRegularFile
  * modifications to make it work in Kotlin, and a few other optimisations, by
  * KryptonMC.
  */
-class RegionFile(
-    private val folder: Path,
-    private val externalFolder: Path,
-    private val version: RegionFileVersion,
-    synchronizeWrites: Boolean
-) : AutoCloseable {
+class RegionFile(private val folder: Path, private val externalFolder: Path, private val version: RegionFileVersion) : AutoCloseable {
 
     private val channel: FileChannel
     private val header = ByteBuffer.allocateDirect(SECTOR_BYTES * 2)
@@ -63,7 +57,7 @@ class RegionFile(
         offsets = header.asIntBuffer().limit(SECTOR_INTS)
         header.position(SECTOR_BYTES)
         timestamps = header.asIntBuffer()
-        channel = if (synchronizeWrites) FileChannel.open(folder, DSYNC_FLAGS) else FileChannel.open(folder, STANDARD_FLAGS)
+        channel = if (SYNC_WRITES) FileChannel.open(folder, DSYNC_FLAGS) else FileChannel.open(folder, STANDARD_FLAGS)
 
         usedSectors.force(0, 2)
         header.position(HEADER_OFFSET)
@@ -99,8 +93,7 @@ class RegionFile(
         }
     }
 
-    constructor(folder: Path, externalFolder: Path,
-                synchronizeWrites: Boolean) : this(folder, externalFolder, RegionFileVersion.ZLIB, synchronizeWrites)
+    constructor(folder: Path, externalFolder: Path) : this(folder, externalFolder, RegionFileVersion.ZLIB)
 
     /**
      * Gets a [DataInputStream] containing all of the chunk data for a chunk at
@@ -319,6 +312,8 @@ class RegionFile(
     }
 
     companion object {
+
+        private val SYNC_WRITES = java.lang.Boolean.getBoolean("krypton.synchronize-writes")
 
         private val LOGGER = LogManager.getLogger()
         private const val SECTOR_BYTES = 4096

@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.plugin.server
 
@@ -33,7 +32,7 @@ import org.kryptonmc.krypton.plugin.module.PluginModule
 import org.kryptonmc.krypton.util.NoSpread
 import org.kryptonmc.processor.SerializedPluginDescription
 import java.io.InputStreamReader
-import java.nio.file.Files
+import java.net.URI
 import java.nio.file.Path
 
 class ServerPluginSource(
@@ -45,12 +44,12 @@ class ServerPluginSource(
     override fun loadDescriptions(): Collection<PluginDescription> {
         val moduleInfoFiles = moduleDiscoverer.discover()
         val result = ArrayList<PluginDescription>()
-        moduleInfoFiles.forEach { path ->
-            val moduleName = getModuleNameFromPath(path)
+        moduleInfoFiles.forEach { uri ->
+            val moduleName = getModuleNameFromUri(uri)
             if (!modules.isEnabled(moduleName)) return@forEach
 
             try {
-                result.add(loadDescription(path))
+                result.add(loadDescription(uri))
             } catch (exception: Exception) {
                 LOGGER.error("Failed to load internal module $moduleName!", exception)
             }
@@ -59,15 +58,15 @@ class ServerPluginSource(
         return result
     }
 
-    private fun loadDescription(source: Path): LoadedCandidateDescription {
-        val serialized = findMetadata(source) ?: throw InvalidModuleException("Module ${getModuleNameFromPath(source)} has invalid metadata!")
+    private fun loadDescription(source: URI): LoadedCandidateDescription {
+        val serialized = findMetadata(source) ?: throw InvalidModuleException("Module ${getModuleNameFromUri(source)} has invalid metadata!")
         if (!serialized.id.matches(SerializedPluginDescription.ID_REGEX)) throw InvalidModuleException("Module ID ${serialized.id} is invalid!")
         return serializedToCandidate(serialized)
     }
 
-    private fun findMetadata(path: Path): SerializedPluginDescription? {
-        val reader = JsonReader(InputStreamReader(Files.newInputStream(path)))
-        return SerializedPluginDescription.read(reader)
+    private fun findMetadata(uri: URI): SerializedPluginDescription? {
+        val reader = JsonReader(InputStreamReader(uri.toURL().openStream()))
+        return reader.use { SerializedPluginDescription.read(it) }
     }
 
     override fun loadPlugin(candidate: PluginDescription): PluginDescription {
@@ -148,8 +147,10 @@ class ServerPluginSource(
         private val LOGGER = LogManager.getLogger()
 
         @JvmStatic
-        private fun getModuleNameFromPath(path: Path): String {
-            val pathName = path.toString()
+        private fun getModuleNameFromUri(uri: URI): String {
+            // If we are running in the IDE, path should be non-null, as the URI will just be a path and nothing else.
+            // If we are running in a JAR, schemeSpecificPart will be a file:// location, and path will be null.
+            val pathName = uri.path ?: uri.schemeSpecificPart
             val lastSeparator = pathName.lastIndexOf('/')
 
             val lastPart = pathName.substring(lastSeparator + 1)

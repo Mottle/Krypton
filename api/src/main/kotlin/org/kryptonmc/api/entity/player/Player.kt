@@ -1,10 +1,19 @@
 /*
- * This file is part of the Krypton API, licensed under the MIT license.
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors to the Krypton project.
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This project is licensed under the terms of the MIT license.
- * For more details, please reference the LICENSE file in the api top-level directory.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.api.entity.player
 
@@ -22,10 +31,9 @@ import org.kryptonmc.api.util.Direction
 import org.kryptonmc.api.statistic.StatisticsTracker
 import org.kryptonmc.api.scoreboard.Scoreboard
 import org.kryptonmc.api.user.BaseUser
-import org.kryptonmc.api.util.Position
 import org.kryptonmc.api.util.Vec3d
 import org.kryptonmc.api.world.GameMode
-import java.net.InetSocketAddress
+import java.net.SocketAddress
 
 /**
  * A player that is connected to the server and playing the game.
@@ -36,7 +44,7 @@ public interface Player : LivingEntity, Equipable, PluginMessageRecipient, BaseU
     /**
      * The address that the player is currently connected from.
      */
-    public val address: InetSocketAddress
+    public val address: SocketAddress
 
     /**
      * If this player can fly.
@@ -90,6 +98,11 @@ public interface Player : LivingEntity, Equipable, PluginMessageRecipient, BaseU
      * The scoreboard currently being shown to this player.
      */
     public val scoreboard: Scoreboard
+
+    /**
+     * The tab list for this player.
+     */
+    public val tabList: TabList
 
     /**
      * The inventory of this player.
@@ -151,14 +164,17 @@ public interface Player : LivingEntity, Equipable, PluginMessageRecipient, BaseU
     public fun sendResourcePack(pack: ResourcePack)
 
     /**
-     * Teleports this player to the given [position].
+     * Shows the given [scoreboard] to this player, hiding the old scoreboard
+     * this player was viewing from them.
+     *
+     * @param scoreboard the scoreboard to show
      */
-    public fun teleport(position: Position)
+    public fun showScoreboard(scoreboard: Scoreboard)
 
     /**
-     * Teleports this player to the given other [player].
+     * Resets the scoreboard shown to the player back to the default one.
      */
-    public fun teleport(player: Player)
+    public fun resetScoreboard()
 
     /**
      * Makes this player start gliding (elytra flying).

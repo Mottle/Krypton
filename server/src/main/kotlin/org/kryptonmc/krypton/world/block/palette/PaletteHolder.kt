@@ -1,29 +1,28 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.world.block.palette
 
-import io.netty.buffer.ByteBuf
 import it.unimi.dsi.fastutil.ints.Int2ObjectFunction
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import net.kyori.adventure.key.Key
 import org.kryptonmc.api.registry.Registry
 import org.kryptonmc.api.world.biome.Biome
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.registry.KryptonRegistry
 import org.kryptonmc.krypton.util.bits.BitStorage
 import org.kryptonmc.krypton.util.ByteBufExtras
@@ -31,9 +30,10 @@ import org.kryptonmc.krypton.util.map.IntBiMap
 import org.kryptonmc.krypton.util.math.Maths
 import org.kryptonmc.krypton.util.bits.SimpleBitStorage
 import org.kryptonmc.krypton.util.bits.ZeroBitStorage
-import org.kryptonmc.krypton.util.writeLongArray
+import org.kryptonmc.krypton.world.biome.BiomeKeys
 import org.kryptonmc.krypton.world.block.BlockStateSerialization
 import org.kryptonmc.krypton.world.block.KryptonBlock
+import org.kryptonmc.krypton.world.block.KryptonBlocks
 import org.kryptonmc.krypton.world.block.state.KryptonBlockState
 import org.kryptonmc.nbt.CompoundTag
 import org.kryptonmc.nbt.StringTag
@@ -61,12 +61,12 @@ class PaletteHolder<T> : PaletteResizer<T> {
     constructor(strategy: Strategy<T>, value: T) {
         this.strategy = strategy
         data = createOrReuseData(null, 0)
-        data.palette.get(value) // Preload
+        data.palette.getId(value) // Preload
     }
 
     @Synchronized
     fun getAndSet(x: Int, y: Int, z: Int, value: T): T {
-        val id = data.palette.get(value)
+        val id = data.palette.getId(value)
         val newId = data.storage.getAndSet(strategy.indexOf(x, y, z), id)
         return data.palette.get(newId)
     }
@@ -77,12 +77,12 @@ class PaletteHolder<T> : PaletteResizer<T> {
 
     @Synchronized
     fun set(x: Int, y: Int, z: Int, value: T) {
-        data.storage.set(strategy.indexOf(x, y, z), data.palette.get(value))
+        data.storage.set(strategy.indexOf(x, y, z), data.palette.getId(value))
     }
 
     @Synchronized
-    fun write(buf: ByteBuf) {
-        data.write(buf)
+    fun write(writer: BinaryWriter) {
+        data.write(writer)
     }
 
     @Synchronized
@@ -91,7 +91,7 @@ class PaletteHolder<T> : PaletteResizer<T> {
         val size = strategy.calculateSize()
         val ids = IntArray(size)
         data.storage.unpack(ids)
-        swapPalette(ids) { palette.get(data.palette.get(it)) }
+        swapPalette(ids) { palette.getId(data.palette.get(it)) }
         val bits = strategy.calculateSerializationBits(palette.size())
         val data = if (bits != 0) SimpleBitStorage(bits, size, ids).data else LongArray(0)
         return compound {
@@ -111,7 +111,7 @@ class PaletteHolder<T> : PaletteResizer<T> {
         val new = createOrReuseData(old, newBits)
         new.copyFrom(data.palette, data.storage)
         data = new
-        return new.palette.get(value)
+        return new.palette.getId(value)
     }
 
     private fun createOrReuseData(old: Data<T>?, bits: Int): Data<T> {
@@ -143,17 +143,19 @@ class PaletteHolder<T> : PaletteResizer<T> {
         fun copyFrom(oldPalette: Palette<T>, oldStorage: BitStorage) {
             for (i in 0 until oldStorage.size) {
                 val value = oldPalette.get(oldStorage.get(i))!!
-                storage.set(i, palette.get(value))
+                storage.set(i, palette.getId(value))
             }
         }
 
-        fun write(buf: ByteBuf) {
-            buf.writeByte(storage.bits)
-            palette.write(buf)
-            buf.writeLongArray(storage.data)
+        fun write(writer: BinaryWriter) {
+            writer.writeByte(storage.bits.toByte())
+            palette.write(writer)
+            writer.writeLongArray(storage.data)
         }
 
-        fun calculateSerializedSize(): Int = 1 + palette.calculateSerializedSize() + ByteBufExtras.getVarIntBytes(storage.size) + storage.sizeBytes()
+        fun calculateSerializedSize(): Int {
+            return 1 + palette.calculateSerializedSize() + ByteBufExtras.getVarIntBytes(storage.size) + storage.data.size * Long.SIZE_BYTES
+        }
 
         fun copy(): Data<T> = Data(configuration, storage.copy(), palette.copy())
     }
@@ -230,6 +232,14 @@ class PaletteHolder<T> : PaletteResizer<T> {
                 entries.add(checkNotNull(biome) { "Invalid palette data! Failed to find biome with key $it!" })
             }
             return read(Strategy.biomes(registry as KryptonRegistry<Biome>), entries, data.getLongArray(DATA_TAG))
+        }
+
+        @JvmStatic
+        fun blocks(): PaletteHolder<KryptonBlockState> = PaletteHolder(Strategy.BLOCKS, KryptonBlocks.AIR.defaultState)
+
+        @JvmStatic
+        fun biomes(registry: KryptonRegistry<Biome>): PaletteHolder<Biome> {
+            return PaletteHolder(Strategy.biomes(registry), registry.get(BiomeKeys.PLAINS)!!)
         }
 
         @Suppress("UNCHECKED_CAST")

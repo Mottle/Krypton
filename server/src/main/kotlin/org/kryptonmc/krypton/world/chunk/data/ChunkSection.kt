@@ -1,30 +1,27 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.world.chunk.data
 
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.api.world.biome.Biome
-import org.kryptonmc.krypton.coordinate.SectionPos
+import org.kryptonmc.krypton.network.Writable
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.registry.KryptonRegistry
-import org.kryptonmc.krypton.world.biome.BiomeKeys
 import org.kryptonmc.krypton.world.biome.NoiseBiomeSource
-import org.kryptonmc.krypton.world.block.KryptonBlocks
 import org.kryptonmc.krypton.world.block.state.KryptonBlockState
 import org.kryptonmc.krypton.world.block.palette.PaletteHolder
 
@@ -33,27 +30,19 @@ import org.kryptonmc.krypton.world.block.palette.PaletteHolder
  * states and palette information.
  */
 class ChunkSection(
-    y: Int,
     val blocks: PaletteHolder<KryptonBlockState>,
     val biomes: PaletteHolder<Biome>,
-    val blockLight: ByteArray,
-    val skyLight: ByteArray
-) : NoiseBiomeSource {
+    val blockLight: ByteArray?,
+    val skyLight: ByteArray?
+) : NoiseBiomeSource, Writable {
 
-    val bottomBlockY: Int = SectionPos.sectionToBlock(y)
     private var nonEmptyBlockCount = 0
 
     init {
         recount()
     }
 
-    constructor(y: Int, biomeRegistry: KryptonRegistry<Biome>) : this(
-        y,
-        PaletteHolder(PaletteHolder.Strategy.BLOCKS, KryptonBlocks.AIR.defaultState),
-        PaletteHolder(PaletteHolder.Strategy.biomes(biomeRegistry), biomeRegistry.get(BiomeKeys.PLAINS)!!),
-        ByteArray(LIGHTS_SIZE),
-        ByteArray(LIGHTS_SIZE)
-    )
+    constructor(biomeRegistry: KryptonRegistry<Biome>) : this(PaletteHolder.blocks(), PaletteHolder.biomes(biomeRegistry), null, null)
 
     fun getBlock(x: Int, y: Int, z: Int): KryptonBlockState = blocks.get(x, y, z)
 
@@ -71,22 +60,16 @@ class ChunkSection(
     private fun recount() {
         nonEmptyBlockCount = 0
         blocks.forEachLocation { block, _ ->
-            val fluid = block.asFluid()
             if (!block.isAir()) nonEmptyBlockCount++
-            if (!fluid.isEmpty()) nonEmptyBlockCount++
+            if (!block.asFluid().isEmpty()) nonEmptyBlockCount++
         }
     }
 
-    fun write(buf: ByteBuf) {
-        buf.writeShort(nonEmptyBlockCount)
-        blocks.write(buf)
-        biomes.write(buf)
+    override fun write(writer: BinaryWriter) {
+        writer.writeShort(nonEmptyBlockCount.toShort())
+        blocks.write(writer)
+        biomes.write(writer)
     }
 
     override fun getNoiseBiome(x: Int, y: Int, z: Int): Biome = biomes.get(x, y, z)
-
-    companion object {
-
-        private const val LIGHTS_SIZE = 2048
-    }
 }

@@ -1,10 +1,19 @@
 /*
- * This file is part of the Krypton API, licensed under the MIT license.
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors to the Krypton project.
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This project is licensed under the terms of the MIT license.
- * For more details, please reference the LICENSE file in the api top-level directory.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.api.world
 
@@ -33,12 +42,12 @@ import org.kryptonmc.api.world.chunk.BlockChangeFlags
 import org.kryptonmc.api.world.chunk.Chunk
 import org.kryptonmc.api.world.dimension.DimensionType
 import org.kryptonmc.api.world.rule.GameRuleHolder
-import java.nio.file.Path
+import java.util.function.Consumer
 
 /**
  * Represents a loaded world.
  */
-public interface World : BlockContainer, FluidContainer, BiomeContainer, BlockEntityContainer, ForwardingAudience, GameRuleHolder {
+public interface World : BlockContainer, FluidContainer, BiomeContainer, BlockEntityContainer, EntityContainer, ForwardingAudience, GameRuleHolder {
 
     /**
      * The server this world was loaded on.
@@ -49,11 +58,6 @@ public interface World : BlockContainer, FluidContainer, BiomeContainer, BlockEn
      * The name of this world.
      */
     public val name: String
-
-    /**
-     * The folder of this world on disk.
-     */
-    public val folder: Path
 
     /**
      * The dimension resource key for this world.
@@ -78,12 +82,12 @@ public interface World : BlockContainer, FluidContainer, BiomeContainer, BlockEn
     /**
      * All of the entities currently in this world.
      */
-    public val entities: Collection<Entity>
+    override val entities: Collection<Entity>
 
     /**
      * All of the players currently in this world.
      */
-    public val players: Collection<Player>
+    override val players: Collection<Player>
 
     /**
      * This world's border.
@@ -294,6 +298,51 @@ public interface World : BlockContainer, FluidContainer, BiomeContainer, BlockEn
      * @param position the position to spawn the entity at
      */
     public fun <T : Entity> spawnEntity(type: EntityType<T>, position: Position): T?
+
+    /**
+     * Gets all entities of the given [type] that are within the given [range]
+     * of the given [position], calling the given [callback] for each entity
+     * found.
+     *
+     * @param E the entity type
+     * @param position the centre position to look around
+     * @param range the range to look for entities in
+     * @param type the type of entities to find
+     * @param callback the callback called for each entity found
+     */
+    public fun <E : Entity> getNearbyEntitiesOfType(position: Position, range: Double, type: Class<E>, callback: Consumer<E>)
+
+    /**
+     * Gets all entities of the given [type] that are within the given [range]
+     * of the given [position].
+     *
+     * @param E the entity type
+     * @param position the centre position to look around
+     * @param range the range to look for entities in
+     * @param type the type of entities to find
+     * @return all found entities of the given type
+     */
+    public fun <E : Entity> getNearbyEntitiesOfType(position: Position, range: Double, type: Class<E>): Collection<E>
+
+    /**
+     * Gets all entities that are within the given [range] of the
+     * given [position], calling the given [callback] for each entity found.
+     *
+     * @param position the centre position to look around
+     * @param range the range to look for entities in
+     * @param callback the callback called for each entity found
+     */
+    public fun getNearbyEntities(position: Position, range: Double, callback: Consumer<Entity>)
+
+    /**
+     * Gets all entities that are within the given [range] of the
+     * given [position].
+     *
+     * @param position the centre position to look around
+     * @param range the range to look for entities in
+     * @return all found entities
+     */
+    public fun getNearbyEntities(position: Position, range: Double): Collection<Entity>
 
     public companion object {
 

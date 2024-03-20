@@ -1,58 +1,43 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity
 
-import ca.spottedleaf.dataconverter.minecraft.datatypes.MCTypeRegistry
-import net.kyori.adventure.key.InvalidKeyException
-import net.kyori.adventure.key.Key
 import org.apache.logging.log4j.LogManager
-import org.kryptonmc.api.util.Position
-import org.kryptonmc.krypton.KryptonPlatform
 import org.kryptonmc.krypton.entity.player.KryptonPlayer
 import org.kryptonmc.krypton.event.entity.KryptonRemoveEntityEvent
 import org.kryptonmc.krypton.event.entity.KryptonSpawnEntityEvent
 import org.kryptonmc.krypton.packet.out.play.PacketOutUpdateTime
-import org.kryptonmc.krypton.registry.KryptonRegistries
-import org.kryptonmc.krypton.util.DataConversion
-import org.kryptonmc.krypton.coordinate.SectionPos
-import org.kryptonmc.krypton.util.nbt.getDataVersion
-import org.kryptonmc.krypton.util.nbt.putDataVersion
 import org.kryptonmc.krypton.world.KryptonWorld
-import org.kryptonmc.krypton.coordinate.ChunkPos
-import org.kryptonmc.krypton.world.chunk.KryptonChunk
-import org.kryptonmc.krypton.world.region.RegionFileManager
-import org.kryptonmc.nbt.CompoundTag
-import org.kryptonmc.nbt.ImmutableListTag
-import org.kryptonmc.nbt.compound
 import space.vectrix.flare.fastutil.Int2ObjectSyncMap
-import space.vectrix.flare.fastutil.Long2ObjectSyncMap
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.function.LongFunction
-import kotlin.math.abs
 
-class EntityManager(val world: KryptonWorld) : AutoCloseable {
+/**
+ * Manages all entities that exist in a world.
+ *
+ * This provides fast lookups for entities by both internal ID and unique ID (UUID), and also
+ * supports loading and saving entities to and from chunks.
+ */
+class EntityManager(private val world: KryptonWorld) {
 
+    private val entityTracker = world.entityTracker
     private val byId = Int2ObjectSyncMap.hashmap<KryptonEntity>()
     private val byUUID = ConcurrentHashMap<UUID, KryptonEntity>()
-    private val byChunk = Long2ObjectSyncMap.hashmap<MutableSet<KryptonEntity>>()
-    private val regionFileManager = RegionFileManager(world.folder.resolve("entities"), world.server.config.advanced.synchronizeChunkWrites)
 
     fun entities(): MutableCollection<KryptonEntity> = byId.values
 
@@ -60,10 +45,20 @@ class EntityManager(val world: KryptonWorld) : AutoCloseable {
 
     fun getByUUID(uuid: UUID): KryptonEntity? = byUUID.get(uuid)
 
+    /**
+     * Spawns the entity in to the world, starting its tracking and ticking, and making it
+     * viewable by players.
+     *
+     * This will not spawn the entity under the following conditions:
+     * * The world the entity is in is not the world this manager is managing
+     * * The entity's UUID is already in use by another entity
+     * * The entity's spawn event is denied
+     * * The chunk the entity is in is not loaded (throws an error)
+     */
     fun spawnEntity(entity: KryptonEntity) {
         if (entity.world != world) return
         if (byUUID.containsKey(entity.uuid)) {
-            LOGGER.error("UUID collision! UUID for entity with ID ${entity.id} collided with entity with ID ${byUUID.get(entity.uuid)?.id}!")
+            LOGGER.error("UUID collision! UUID for entity ${entity.id} was the same as that of entity ${byUUID.get(entity.uuid)?.id}!")
             LOGGER.warn("Refusing to spawn entity with ID ${entity.id}.")
             return
         }
@@ -71,144 +66,65 @@ class EntityManager(val world: KryptonWorld) : AutoCloseable {
         val event = world.server.eventNode.fire(KryptonSpawnEntityEvent(entity, world))
         if (!event.isAllowed()) return
 
-        forEachEntityInRange(entity.position, world.server.config.world.viewDistance) {
-            if (it is KryptonPlayer) entity.addViewer(it)
+        val chunk = checkNotNull(world.getChunk(entity.position.chunkX(), entity.position.chunkZ())) {
+            "The chunk that entity ${entity.id} is in is not loaded!"
         }
 
-        val chunk = world.getChunk(entity.position.chunkX(), entity.position.chunkZ()) ?: return
+        entityTracker.add(entity, entity.position, entity.trackingTarget, entity.trackingViewCallback)
         byId.put(entity.id, entity)
         byUUID.put(entity.uuid, entity)
-        getByChunk(chunk.position.pack()).add(entity)
         world.server.tickDispatcher().queueElementUpdate(entity, chunk)
     }
 
+    /**
+     * Spawns the player in to the world, starting its tracking and ticking, and making it
+     * viewable by other players.
+     *
+     * This will not spawn the player under the following conditions:
+     * * The world the player is in is not the world this manager is managing
+     * * The chunk the player is in is not loaded (throws an error)
+     */
     fun spawnPlayer(player: KryptonPlayer) {
         if (player.world != world) return
 
         // TODO: World border
         player.connection.send(PacketOutUpdateTime.create(world.data))
-        forEachEntityInRange(player.position, player.settings.viewDistance) {
-            it.addViewer(player)
-            if (it is KryptonPlayer) player.addViewer(it)
+
+        val chunk = world.loadChunk(player.position.chunkX(), player.position.chunkZ())
+        if (chunk == null) {
+            LOGGER.error("The chunk that player ${player.name} is loading in to is not loaded! Refusing to spawn ${player.name}!")
+            return
         }
 
-        val chunk = world.getChunk(player.position.chunkX(), player.position.chunkZ()) ?: return
+        entityTracker.add(player, player.position, player.trackingTarget, player.trackingViewCallback)
         byId.put(player.id, player)
         byUUID.put(player.uuid, player)
-        getByChunk(chunk.position.pack()).add(player)
         world.server.tickDispatcher().queueElementUpdate(player, chunk)
     }
 
-    private fun getByChunk(location: Long): MutableSet<KryptonEntity> =
-        byChunk.computeIfAbsent(location, LongFunction { ConcurrentHashMap.newKeySet() })
-
+    /**
+     * Removes the entity from the world, stopping its tracking and ticking, and making it
+     * no longer viewable by players.
+     *
+     * This will not remove the entity under the following conditions:
+     * * The world the entity is in is not the world this manager is managing
+     * * The entity's removal event is denied
+     */
     fun removeEntity(entity: KryptonEntity) {
         if (entity.world != world) return
 
         val event = world.server.eventNode.fire(KryptonRemoveEntityEvent(entity, world))
         if (!event.isAllowed()) return
 
-        forEachEntityInRange(entity.position, world.server.config.world.viewDistance) {
-            if (it is KryptonPlayer) entity.removeViewer(it)
-            if (entity is KryptonPlayer) it.removeViewer(entity)
-        }
-
-        val chunk = world.getChunk(entity.position.chunkX(), entity.position.chunkZ()) ?: return
+        entityTracker.remove(entity, entity.trackingTarget, entity.trackingViewCallback)
         byId.remove(entity.id)
         byUUID.remove(entity.uuid)
-        val entitiesByChunk = byChunk.get(chunk.position.pack()).apply { remove(entity) }
-        if (entitiesByChunk.isEmpty()) byChunk.remove(chunk.position.pack())
         world.scoreboard.onEntityRemoved(entity)
         world.server.tickDispatcher().queueElementRemove(entity)
     }
 
-    fun loadAllInChunk(chunk: KryptonChunk) {
-        val nbt = regionFileManager.read(chunk.x, chunk.z) ?: return
-
-        val dataVersion = nbt.getDataVersion()
-        val data = if (dataVersion < KryptonPlatform.worldVersion) DataConversion.upgrade(nbt, MCTypeRegistry.ENTITY_CHUNK, dataVersion) else nbt
-
-        data.getList(ENTITIES_TAG, CompoundTag.ID).forEachCompound {
-            val id = it.getString(ID_TAG)
-            if (id.isBlank()) return@forEachCompound
-            val key = try {
-                Key.key(id)
-            } catch (_: InvalidKeyException) {
-                return@forEachCompound
-            }
-            val type = KryptonRegistries.ENTITY_TYPE.get(key)
-            val entity = EntityFactory.create(type, world) ?: return@forEachCompound
-            entity.load(it)
-            spawnEntity(entity)
-        }
-    }
-
-    fun saveAllInChunk(chunk: KryptonChunk) {
-        val entities = byChunk.get(chunk.position.pack()) ?: return
-        if (entities.isEmpty()) return
-        val entityList = ImmutableListTag.builder(CompoundTag.ID)
-        entities.forEach { if (it !is KryptonPlayer) entityList.add(it.saveWithPassengers().build()) }
-        regionFileManager.write(chunk.x, chunk.z, compound {
-            putDataVersion()
-            putInts(POSITION_TAG, chunk.position.x, chunk.position.z)
-            put(ENTITIES_TAG, entityList.build())
-        })
-    }
-
-    fun flush() {
-        regionFileManager.flush()
-    }
-
-    override fun close() {
-        regionFileManager.close()
-    }
-
-    private inline fun forEachEntityInRange(position: Position, viewDistance: Int, callback: (KryptonEntity) -> Unit) {
-        chunksInRange(position, viewDistance).forEach {
-            val chunk = world.getChunk(ChunkPos.unpackX(it), ChunkPos.unpackZ(it)) ?: return@forEach
-            getByChunk(chunk.position.pack()).forEach(callback)
-        }
-    }
-
     companion object {
 
-        private const val ID_TAG = "id"
-        private const val POSITION_TAG = "Position"
-        private const val ENTITIES_TAG = "Entities"
         private val LOGGER = LogManager.getLogger()
-
-        @JvmStatic
-        private fun chunksInRange(position: Position, range: Int): LongArray {
-            val area = (range * 2 + 1) * (range * 2 + 1)
-            val visible = LongArray(area)
-            var dx = 0
-            var directionX = 1
-            var dz = 0
-            var directionZ = -1
-            var length = 1
-            var corner = 0
-
-            for (i in 0 until area) {
-                val chunkX = SectionPos.blockToSection(SectionPos.sectionToBlock(dx) + position.x)
-                val chunkZ = SectionPos.blockToSection(SectionPos.sectionToBlock(dz) + position.z)
-                visible[i] = ChunkPos.pack(chunkX, chunkZ)
-
-                if (corner % 2 == 0) {
-                    dx += directionX
-                    if (abs(dx) == length) {
-                        corner++
-                        directionX = -directionX
-                    }
-                } else {
-                    dz += directionZ
-                    if (abs(dz) == length) {
-                        corner++
-                        directionZ = -directionZ
-                        if (corner % 4 == 0) length++
-                    }
-                }
-            }
-            return visible
-        }
     }
 }

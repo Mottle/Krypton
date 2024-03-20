@@ -1,25 +1,23 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
 import com.google.common.collect.Sets
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.api.registry.RegistryHolder
 import org.kryptonmc.api.resource.ResourceKey
 import org.kryptonmc.api.resource.ResourceKeys
@@ -29,17 +27,9 @@ import org.kryptonmc.api.world.dimension.DimensionType
 import org.kryptonmc.krypton.packet.EntityPacket
 import org.kryptonmc.krypton.util.enumhelper.GameModes
 import org.kryptonmc.krypton.coordinate.GlobalPos
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.registry.network.RegistrySerialization
-import org.kryptonmc.krypton.util.decode
-import org.kryptonmc.krypton.util.encode
-import org.kryptonmc.krypton.util.readCollection
-import org.kryptonmc.krypton.util.readKey
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.readNullable
-import org.kryptonmc.krypton.util.writeCollection
-import org.kryptonmc.krypton.util.writeNullable
-import org.kryptonmc.krypton.util.writeResourceKey
-import org.kryptonmc.krypton.util.writeVarInt
 
 @JvmRecord
 data class PacketOutLogin(
@@ -62,43 +52,44 @@ data class PacketOutLogin(
     val deathLocation: GlobalPos?
 ) : EntityPacket {
 
-    constructor(buf: ByteBuf) : this(
-        buf.readInt(),
-        buf.readBoolean(),
-        GameModes.fromId(buf.readByte().toInt())!!,
-        GameModes.fromId(buf.readByte().toInt())!!,
-        buf.readCollection({ Sets.newHashSetWithExpectedSize(it) }) { ResourceKey.of(ResourceKeys.DIMENSION, buf.readKey()) },
-        buf.decode(RegistrySerialization.NETWORK_CODEC),
-        ResourceKey.of(ResourceKeys.DIMENSION_TYPE, buf.readKey()),
-        ResourceKey.of(ResourceKeys.DIMENSION, buf.readKey()),
-        buf.readLong(),
-        buf.readVarInt(),
-        buf.readVarInt(),
-        buf.readVarInt(),
-        buf.readBoolean(),
-        buf.readBoolean(),
-        buf.readBoolean(),
-        buf.readBoolean(),
-        buf.readNullable { GlobalPos(it) }
+    constructor(reader: BinaryReader) : this(
+        reader.readInt(),
+        reader.readBoolean(),
+        GameModes.fromId(reader.readByte().toInt())!!,
+        GameModes.fromId(reader.readByte().toInt())!!,
+        reader.readCollection({ Sets.newHashSetWithExpectedSize(it) }) { ResourceKey.of(ResourceKeys.DIMENSION, reader.readKey()) },
+        reader.decode(RegistrySerialization.NETWORK_CODEC),
+        ResourceKey.of(ResourceKeys.DIMENSION_TYPE, reader.readKey()),
+        ResourceKey.of(ResourceKeys.DIMENSION, reader.readKey()),
+        reader.readLong(),
+        reader.readVarInt(),
+        reader.readVarInt(),
+        reader.readVarInt(),
+        reader.readBoolean(),
+        reader.readBoolean(),
+        reader.readBoolean(),
+        reader.readBoolean(),
+        reader.readNullable { GlobalPos(it) }
     )
 
-    override fun write(buf: ByteBuf) {
-        buf.writeInt(entityId)
-        buf.writeBoolean(isHardcore)
-        buf.writeByte(gameMode.ordinal)
-        buf.writeByte(oldGameMode?.ordinal ?: -1)
-        buf.writeCollection(dimensions, buf::writeResourceKey)
-        buf.encode(RegistrySerialization.NETWORK_CODEC, registryHolder)
-        buf.writeResourceKey(dimensionType)
-        buf.writeResourceKey(dimension)
-        buf.writeLong(seed)
-        buf.writeVarInt(maxPlayers)
-        buf.writeVarInt(viewDistance)
-        buf.writeVarInt(simulationDistance)
-        buf.writeBoolean(reducedDebugInfo)
-        buf.writeBoolean(enableRespawnScreen)
-        buf.writeBoolean(isDebug)
-        buf.writeBoolean(isFlat)
-        buf.writeNullable(deathLocation) { _, pos -> pos.write(buf) }
+    override fun write(writer: BinaryWriter) {
+        writer.writeInt(entityId)
+        writer.writeBoolean(isHardcore)
+        writer.writeByte(gameMode.ordinal.toByte())
+        val oldGameModeId = oldGameMode?.ordinal ?: -1
+        writer.writeByte(oldGameModeId.toByte())
+        writer.writeCollection(dimensions, writer::writeResourceKey)
+        writer.encode(RegistrySerialization.NETWORK_CODEC, registryHolder)
+        writer.writeResourceKey(dimensionType)
+        writer.writeResourceKey(dimension)
+        writer.writeLong(seed)
+        writer.writeVarInt(maxPlayers)
+        writer.writeVarInt(viewDistance)
+        writer.writeVarInt(simulationDistance)
+        writer.writeBoolean(reducedDebugInfo)
+        writer.writeBoolean(enableRespawnScreen)
+        writer.writeBoolean(isDebug)
+        writer.writeBoolean(isFlat)
+        writer.writeNullable(deathLocation) { _, pos -> pos.write(writer) }
     }
 }

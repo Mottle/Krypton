@@ -1,33 +1,15 @@
 import org.apache.tools.ant.filters.ReplaceTokens
 
 plugins {
+    id("krypton.api-conventions")
     id("io.gitlab.arturbosch.detekt")
-    id("info.solidsoft.pitest")
     id("com.google.devtools.ksp")
+    jacoco
 }
 
 dependencies {
     api(projects.api)
     implementation(projects.annotationProcessor)
-
-    // Networking
-    api(libs.netty.buffer)
-    api(libs.netty.handler)
-    api(libs.netty.transport)
-    implementation(libs.netty.transport.native.epoll) {
-        artifact {
-            classifier = "linux-x86_64"
-        }
-    }
-    implementation(libs.netty.transport.native.kqueue) {
-        artifact {
-            classifier = "osx-x86_64"
-        }
-    }
-    implementation(libs.velocity.native)
-
-    // Events
-    implementation(libs.lmbda)
 
     // Logging and console
     runtimeOnly(libs.log4j.core)
@@ -56,6 +38,7 @@ dependencies {
     compileOnly(projects.internalAnnotations)
     ksp(projects.internalAp)
     implementation(libs.reflections)
+    implementation(libs.hydrazine)
 
     testImplementation(libs.junit.api)
     testImplementation(libs.junit.engine)
@@ -66,7 +49,6 @@ dependencies {
     testRuntimeOnly(libs.bytebuddy)
     testImplementation(projects.internalAnnotations)
     testImplementation(libs.equalsVerifier)
-    pitest(libs.arcmutateKotlin)
     testImplementation(libs.jsonassert)
 }
 
@@ -76,28 +58,13 @@ license {
         "**/*.conf",
         "**/*.json",
         // Velocity derivatives, with a special header
-        "**/event/CustomHandlerAdapter.kt",
-        "**/event/EventTypeTracker.kt",
-        "**/event/KryptonEventManager.kt",
-        "**/event/UntargetedEventHandler.kt",
-        "**/plugin/KryptonPluginContainer.kt",
         "**/plugin/KryptonPluginManager.kt",
         "**/plugin/PluginClassLoader.kt",
         "**/plugin/PluginDependencies.kt",
-        "**/plugin/loader/LoadedPluginDescription.kt",
-        "**/plugin/loader/LoadedPluginDescriptionCandidate.kt",
-        "**/plugin/loader/PluginLoader.kt",
-        "**/util/bytebufs.kt",
         // Sponge derivatives, with a special header
         "**/console/BrigadierCompleter.kt",
         "**/console/BrigadierHighlighter.kt"
     )
-}
-
-pitest {
-    pitestVersion.set(libs.versions.pitest)
-    junit5PluginVersion.set("1.0.0")
-    targetClasses.set(setOf("org.kryptonmc.api.*", "org.kryptonmc.krypton.*"))
 }
 
 tasks {
@@ -110,6 +77,22 @@ tasks {
                 "data" to minecraftVersion.replace('.', '_')
             ))
         }
+    }
+    jacocoTestReport {
+        dependsOn(test)
+        reports {
+            html.required.set(true)
+            xml.required.set(true)
+        }
+    }
+    build {
+        dependsOn(test)
+    }
+    compileKotlin {
+        compilerOptions.freeCompilerArgs.add("-Xjvm-default=all")
+    }
+    withType<Test> {
+        useJUnitPlatform()
     }
 }
 

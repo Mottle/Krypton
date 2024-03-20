@@ -1,10 +1,19 @@
 /*
- * This file is part of the Krypton API, licensed under the MIT license.
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors to the Krypton project.
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This project is licensed under the terms of the MIT license.
- * For more details, please reference the LICENSE file in the api top-level directory.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.api.world
 
@@ -56,13 +65,17 @@ public interface WorldManager {
     public fun isLoaded(key: Key): Boolean
 
     /**
-     * Loads a world by its resource key.
+     * Loads a world by its resource key, if there is a world that can be
+     * loaded from the given key.
+     *
+     * If no world can be loaded from the given key, this returns a null
+     * result.
      *
      * @param key the resource key for the world
-     * @return a future representing the result of loading the world with the
-     * given key
+     * @return the loaded world, or null if no world could be loaded from
+     * the key
      */
-    public fun loadWorld(key: Key): CompletableFuture<out World>
+    public fun loadWorld(key: Key): CompletableFuture<out World?>
 
     /**
      * Saves the given [world] to disk.

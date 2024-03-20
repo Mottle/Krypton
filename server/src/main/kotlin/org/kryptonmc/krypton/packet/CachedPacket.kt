@@ -1,38 +1,37 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet
 
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.krypton.network.PacketFraming
 import java.lang.ref.SoftReference
+import java.nio.ByteBuffer
 import java.util.function.Supplier
 
 class CachedPacket(private val supplier: Supplier<Packet>) : GenericPacket {
 
-    private var packet: SoftReference<CachedFramedPacket>? = null
+    private var packet: SoftReference<FramedPacket>? = null
 
     fun packet(): Packet {
         val cache = updatedCache()
         return cache?.packet ?: supplier.get()
     }
 
-    fun body(): ByteBuf? {
+    fun body(): ByteBuffer? {
         val cache = updatedCache()
         return cache?.body
     }
@@ -41,17 +40,13 @@ class CachedPacket(private val supplier: Supplier<Packet>) : GenericPacket {
         packet = null
     }
 
-    private fun updatedCache(): CachedFramedPacket? {
+    private fun updatedCache(): FramedPacket? {
         val ref = packet
-        var cached: CachedFramedPacket? = null
+        var cached: FramedPacket? = null
         if (ref == null || ref.get().also { cached = it } == null) {
-            val updatedPacket = supplier.get()
-            cached = CachedFramedPacket(updatedPacket, PacketFraming.frame(updatedPacket))
+            cached = PacketFraming.frame(supplier.get())
             packet = SoftReference(cached)
         }
         return cached
     }
-
-    @JvmRecord
-    private data class CachedFramedPacket(val packet: Packet, val body: ByteBuf)
 }

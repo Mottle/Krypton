@@ -1,30 +1,26 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.network.chat
 
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.krypton.network.Writable
-import org.kryptonmc.krypton.util.readBitSet
-import org.kryptonmc.krypton.util.readEnum
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.util.serialization.Codecs
-import org.kryptonmc.krypton.util.writeBitSet
-import org.kryptonmc.krypton.util.writeEnum
 import org.kryptonmc.serialization.Codec
 import java.util.BitSet
 import java.util.function.Supplier
@@ -55,9 +51,9 @@ class FilterMask private constructor(private val mask: BitSet, private val type:
 
     fun isFullyFiltered(): Boolean = type == Type.FULLY_FILTERED
 
-    override fun write(buf: ByteBuf) {
-        buf.writeEnum(type)
-        if (type == Type.PARTIALLY_FILTERED) buf.writeBitSet(mask)
+    override fun write(writer: BinaryWriter) {
+        writer.writeEnum(type)
+        if (type == Type.PARTIALLY_FILTERED) writer.writeBitSet(mask)
     }
 
     override fun equals(other: Any?): Boolean = this === other || other is FilterMask && mask == other.mask && type == other.type
@@ -87,16 +83,16 @@ class FilterMask private constructor(private val mask: BitSet, private val type:
         private val PARTIALLY_FILTERED_CODEC = Codecs.BIT_SET.xmap({ FilterMask(it, Type.PARTIALLY_FILTERED) }, { it.mask })
 
         @JvmStatic
-        fun read(buf: ByteBuf): FilterMask = when (val type = buf.readEnum<Type>()) {
+        fun read(reader: BinaryReader): FilterMask = when (val type = reader.readEnum<Type>()) {
             Type.PASS_THROUGH -> PASS_THROUGH
             Type.FULLY_FILTERED -> FULLY_FILTERED
-            Type.PARTIALLY_FILTERED -> FilterMask(buf.readBitSet(), type)
+            Type.PARTIALLY_FILTERED -> FilterMask(reader.readBitSet(), type)
         }
 
         @JvmStatic
-        fun write(buf: ByteBuf, mask: FilterMask) {
-            buf.writeEnum(mask.type)
-            if (mask.type == Type.PARTIALLY_FILTERED) buf.writeBitSet(mask.mask)
+        fun write(writer: BinaryWriter, mask: FilterMask) {
+            writer.writeEnum(mask.type)
+            if (mask.type == Type.PARTIALLY_FILTERED) writer.writeBitSet(mask.mask)
         }
     }
 }

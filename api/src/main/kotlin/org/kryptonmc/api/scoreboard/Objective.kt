@@ -1,10 +1,19 @@
 /*
- * This file is part of the Krypton API, licensed under the MIT license.
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors to the Krypton project.
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This project is licensed under the terms of the MIT license.
- * For more details, please reference the LICENSE file in the api top-level directory.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.api.scoreboard
 
@@ -37,7 +46,45 @@ public interface Objective : ScoreboardBound {
      * The setting for how this objective should be displayed on the
      * scoreboard.
      */
-    public val renderType: ObjectiveRenderType
+    public var renderType: ObjectiveRenderType
+
+    /**
+     * All the scores on this objective.
+     */
+    public val scores: Collection<Score>
+
+    /**
+     * Gets the score for the given [member], if the member has a score.
+     *
+     * @param member the member
+     * @return the score, or null if not present
+     */
+    public fun getScore(member: Component): Score?
+
+    /**
+     * Gets the score for the given [member], or creates a new score if the
+     * member does not have a score.
+     *
+     * @param member the member
+     * @return the score
+     */
+    public fun getOrCreateScore(member: Component): Score
+
+    /**
+     * Removes the score for the given [member], if the member has a score.
+     *
+     * @param member the member
+     * @return whether the score was removed
+     */
+    public fun removeScore(member: Component): Boolean
+
+    /**
+     * Removes the given [score], if it exists on this objective.
+     *
+     * @param score the score to remove
+     * @return whether the score was removed
+     */
+    public fun removeScore(score: Score): Boolean
 
     /**
      * A builder for objectives.

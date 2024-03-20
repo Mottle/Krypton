@@ -1,10 +1,18 @@
+import org.jetbrains.dokka.gradle.DokkaTask
+
 plugins {
+    id("krypton.api-conventions")
+    id("org.jetbrains.dokka")
     id("io.gitlab.arturbosch.detekt")
     id("com.google.devtools.ksp")
 }
 
 sourceSets.main {
     java.srcDir("src/generated/kotlin")
+}
+
+configurations.all {
+    exclude("org.checkerframework", "checker-qual")
 }
 
 dependencies {
@@ -47,17 +55,8 @@ dependencies {
 }
 
 license {
-    header(project.resources.text.fromFile("HEADER.txt"))
     exclude(
         // Velocity derivatives, with a special header
-        "**/event/ComponentResult.kt",
-        "**/event/Continuation.kt",
-        "**/event/EventHandler.kt",
-        "**/event/EventManager.kt",
-        "**/event/EventTask.kt",
-        "**/event/GenericResult.kt",
-        "**/event/ResultedEvent.kt",
-        "**/event/server/SetupPermissionsEvent.kt",
         "**/plugin/InvalidPluginException.kt",
         "**/plugin/PluginContainer.kt",
         "**/plugin/PluginDependency.kt",
@@ -67,10 +66,7 @@ license {
         "**/plugin/annotation/Dependency.kt",
         "**/plugin/annotation/Plugin.kt",
         "**/permission/PermissionFunction.kt",
-        "**/permission/PermissionProvider.kt",
-        "**/permission/Subject.kt",
-        // Sponge derivatives, with a special header
-        "**/world/rule/GameRules.kt"
+        "**/permission/Subject.kt"
     )
 }
 
@@ -79,8 +75,15 @@ kotlin {
 }
 
 tasks {
-    dokkaTasks.configureEach {
-        configureSourceSets {
+    compileKotlin {
+        compilerOptions.freeCompilerArgs.add("-Xjvm-default=all")
+    }
+    create<Jar>("dokkaJavadocJar") {
+        archiveClassifier.set("javadoc")
+        from(dokkaJavadoc)
+    }
+    withType<DokkaTask> {
+        dokkaSourceSets.named("main").configure {
             modernJavadocLink("https://guava.dev/releases/${libs.versions.guava.get()}/api/docs/")
             modernJavadocLink("https://javadoc.io/doc/com.google.code.gson/gson/${libs.versions.gson.get()}/")
             externalDocumentationLink("https://commons.apache.org/proper/commons-lang/apidocs/")
@@ -93,5 +96,13 @@ tasks {
     }
 }
 
-applySpecJarMetadata("org.kryptonmc.api", "Krypton API")
+publishing.publications.configureEach {
+    if (this is MavenPublication) artifact(tasks["dokkaJavadocJar"])
+}
+
+configureJarMetadata("org.kryptonmc.api") {
+    put("Specification-Title", "Krypton API")
+    put("Specification-Vendor", "KryptonMC")
+    put("Specification-Version", version.toString())
+}
 setupDetekt()

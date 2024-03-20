@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity.metadata
 
@@ -30,7 +29,7 @@ class MetadataHolder(private val entity: BaseDataHolder) {
     fun isDirty(): Boolean = dirty
 
     fun <T> define(key: MetadataKey<T>, value: T) {
-        val id = key.id
+        val id = key.id.toInt()
         require(id <= MAX_ID_VALUE) { "Data value id $id is too large! Maximum is $MAX_ID_VALUE!" }
         require(!itemsById.containsKey(id)) { "Duplicate id value for $id!" }
         require(MetadataSerializers.getId(key.serializer) >= 0) { "Unregistered serializer ${key.serializer} for $id!" }
@@ -57,12 +56,12 @@ class MetadataHolder(private val entity: BaseDataHolder) {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> entry(key: MetadataKey<T>): MutableEntry<T> = checkNotNull(itemsById.get(key.id) as? MutableEntry<T>) {
+    private fun <T> entry(key: MetadataKey<T>): MutableEntry<T> = checkNotNull(itemsById.get(key.id.toInt()) as? MutableEntry<T>) {
         "Could not find key $key for entity of type ${entity.type}!"
     }
 
     private fun <T> createItem(key: MetadataKey<T>, value: T) {
-        itemsById.put(key.id, MutableEntry(key, value))
+        itemsById.put(key.id.toInt(), MutableEntry(key, value))
     }
 
     fun collectAll(): List<Entry<*>>? {

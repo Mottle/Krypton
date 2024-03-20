@@ -1,29 +1,25 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.login
 
-import io.netty.buffer.ByteBuf
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.Packet
-import org.kryptonmc.krypton.util.readString
-import org.kryptonmc.krypton.util.readVarIntByteArray
-import org.kryptonmc.krypton.util.writeString
-import org.kryptonmc.krypton.util.writeVarIntByteArray
 
 /**
  * Sent to instruct the client that we wish to encrypt this connection. The
@@ -35,17 +31,21 @@ import org.kryptonmc.krypton.util.writeVarIntByteArray
 @Suppress("ArrayInDataClass")
 data class PacketOutEncryptionRequest(val serverId: String, val publicKey: ByteArray, val verifyToken: ByteArray) : Packet {
 
-    constructor(buf: ByteBuf) : this(buf.readString(MAXIMUM_SERVER_ID_LENGTH), buf.readVarIntByteArray(), buf.readVarIntByteArray())
+    init {
+        require(serverId.length <= MAX_SERVER_ID_LENGTH) { "Server ID too long! Max: $MAX_SERVER_ID_LENGTH" }
+    }
 
-    override fun write(buf: ByteBuf) {
-        buf.writeString(serverId, MAXIMUM_SERVER_ID_LENGTH)
-        buf.writeVarIntByteArray(publicKey)
-        buf.writeVarIntByteArray(verifyToken)
+    constructor(reader: BinaryReader) : this(reader.readString(), reader.readByteArray(), reader.readByteArray())
+
+    override fun write(writer: BinaryWriter) {
+        writer.writeString(serverId)
+        writer.writeByteArray(publicKey)
+        writer.writeByteArray(verifyToken)
     }
 
     companion object {
 
-        private const val MAXIMUM_SERVER_ID_LENGTH = 20
+        private const val MAX_SERVER_ID_LENGTH = 20
 
         @JvmStatic
         fun create(publicKey: ByteArray, verifyToken: ByteArray): PacketOutEncryptionRequest = PacketOutEncryptionRequest("", publicKey, verifyToken)

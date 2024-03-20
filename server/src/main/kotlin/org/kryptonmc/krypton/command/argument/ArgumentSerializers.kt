@@ -1,26 +1,24 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.command.argument
 
 import com.mojang.brigadier.arguments.ArgumentType
 import com.mojang.brigadier.arguments.BoolArgumentType
-import io.netty.buffer.ByteBuf
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import net.kyori.adventure.key.Key
 import org.kryptonmc.krypton.command.argument.serializer.ArgumentSerializer
@@ -38,6 +36,7 @@ import org.kryptonmc.krypton.command.arguments.SummonEntityArgument
 import org.kryptonmc.krypton.command.arguments.VectorArgument
 import org.kryptonmc.krypton.command.arguments.item.ItemStackArgumentType
 import org.kryptonmc.krypton.command.arguments.item.ItemStackPredicateArgument
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.util.writeVarInt
 import java.util.concurrent.ConcurrentHashMap
 
@@ -97,10 +96,10 @@ object ArgumentSerializers {
     }
 
     @JvmStatic
-    fun <T : ArgumentType<*>> write(buf: ByteBuf, type: T) {
+    fun <T : ArgumentType<*>> write(writer: BinaryWriter, type: T) {
         val entry = checkNotNull(getByType(type)) { "Argument type for node must have registered serializer!" }
-        buf.writeVarInt(entry.id)
-        entry.serializer.write(buf, type)
+        writer.writeVarInt(entry.id)
+        entry.serializer.write(writer, type)
     }
 
     @JvmRecord

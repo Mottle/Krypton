@@ -1,26 +1,27 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity
 
 import org.kryptonmc.api.entity.EquipmentSlot
 import org.kryptonmc.api.entity.MainHand
 import org.kryptonmc.api.entity.Mob
+import org.kryptonmc.krypton.entity.ai.goal.KryptonGoalSelector
+import org.kryptonmc.krypton.entity.ai.pathfinding.KryptonNavigator
 import org.kryptonmc.krypton.entity.attribute.AttributeSupplier
 import org.kryptonmc.krypton.entity.attribute.KryptonAttributeTypes
 import org.kryptonmc.krypton.entity.metadata.MetadataKeys
@@ -31,6 +32,7 @@ import org.kryptonmc.krypton.item.KryptonItemStack
 import org.kryptonmc.krypton.util.collection.FixedList
 import org.kryptonmc.krypton.world.KryptonWorld
 
+@Suppress("LeakingThis")
 abstract class KryptonMob(world: KryptonWorld) : KryptonLivingEntity(world), Mob {
 
     override val serializer: EntitySerializer<out KryptonMob>
@@ -45,6 +47,9 @@ abstract class KryptonMob(world: KryptonWorld) : KryptonLivingEntity(world), Mob
     final override var isPersistent: Boolean = false
     private var target: KryptonLivingEntity? = null
 
+    override val goalSelector: KryptonGoalSelector = KryptonGoalSelector()
+    override val navigator: KryptonNavigator = KryptonNavigator(this)
+
     final override var hasAI: Boolean
         get() = !data.getFlag(MetadataKeys.Mob.FLAGS, FLAG_NO_AI)
         set(value) = data.setFlag(MetadataKeys.Mob.FLAGS, FLAG_NO_AI, !value)
@@ -54,6 +59,10 @@ abstract class KryptonMob(world: KryptonWorld) : KryptonLivingEntity(world), Mob
     final override var isAggressive: Boolean
         get() = data.getFlag(MetadataKeys.Mob.FLAGS, FLAG_AGGRESSIVE)
         set(value) = data.setFlag(MetadataKeys.Mob.FLAGS, FLAG_AGGRESSIVE, value)
+
+    init {
+        registerGoals()
+    }
 
     override fun defineData() {
         super.defineData()
@@ -97,7 +106,26 @@ abstract class KryptonMob(world: KryptonWorld) : KryptonLivingEntity(world), Mob
     }
     */
 
-    protected fun target(): KryptonLivingEntity? = target
+    protected open fun registerGoals() {
+        // No goals to register by default
+    }
+
+    override fun tick(time: Long) {
+        super.tick(time)
+        if (!isRemoved() && hasAI) doAiTick(time)
+    }
+
+    private fun doAiTick(time: Long) {
+        goalSelector.tick(time)
+        navigator.tick()
+        aiTick()
+    }
+
+    protected open fun aiTick() {
+        // Do nothing by default - subtypes can override this to add custom AI logic
+    }
+
+    fun target(): KryptonLivingEntity? = target
 
     open fun setTarget(target: KryptonLivingEntity?) {
         this.target = target

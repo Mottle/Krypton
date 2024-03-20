@@ -1,10 +1,19 @@
 /*
- * This file is part of the Krypton API, licensed under the MIT license.
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors to the Krypton project.
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This project is licensed under the terms of the MIT license.
- * For more details, please reference the LICENSE file in the api top-level directory.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.api.scoreboard
 
@@ -16,15 +25,14 @@ import net.kyori.adventure.text.Component
 public interface Score : ScoreboardBound {
 
     /**
-     * The name of the score.
+     * The name of the member who's score this is.
      */
-    public val name: Component
+    public val member: Component
 
     /**
-     * The objective this score is registered to, or null if this score is not
-     * currently registered to an objective.
+     * The objective this score is registered to.
      */
-    public val objective: Objective?
+    public val objective: Objective
 
     /**
      * The underlying value of this score.

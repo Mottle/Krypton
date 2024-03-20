@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity.player
 
@@ -23,7 +22,6 @@ import net.kyori.adventure.key.Key
 import net.kyori.adventure.permission.PermissionChecker
 import net.kyori.adventure.pointer.Pointers
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.kryptonmc.api.auth.GameProfile
 import org.kryptonmc.api.effect.particle.ParticleEffect
 import org.kryptonmc.api.effect.particle.data.ColorParticleData
@@ -32,18 +30,18 @@ import org.kryptonmc.api.effect.particle.data.NoteParticleData
 import org.kryptonmc.api.entity.EquipmentSlot
 import org.kryptonmc.api.entity.Hand
 import org.kryptonmc.api.entity.player.ChatVisibility
-import org.kryptonmc.api.entity.player.Player
+import org.kryptonmc.api.entity.player.TabList
 import org.kryptonmc.api.event.player.PlayerChangeGameModeEvent
 import org.kryptonmc.api.inventory.Inventory
 import org.kryptonmc.api.permission.PermissionFunction
 import org.kryptonmc.api.resource.ResourcePack
+import org.kryptonmc.api.scoreboard.Scoreboard
 import org.kryptonmc.api.statistic.CustomStatistics
 import org.kryptonmc.api.tags.FluidTags
 import org.kryptonmc.api.util.Position
 import org.kryptonmc.api.util.Vec3d
 import org.kryptonmc.api.util.Vec3i
 import org.kryptonmc.api.world.GameMode
-import org.kryptonmc.krypton.adventure.KryptonAdventure
 import org.kryptonmc.krypton.commands.KryptonPermission
 import org.kryptonmc.krypton.entity.util.EquipmentSlots
 import org.kryptonmc.krypton.entity.KryptonEntity
@@ -62,40 +60,42 @@ import org.kryptonmc.krypton.entity.system.PlayerHungerSystem
 import org.kryptonmc.krypton.inventory.KryptonPlayerInventory
 import org.kryptonmc.krypton.item.KryptonItemStack
 import org.kryptonmc.krypton.item.handler
-import org.kryptonmc.krypton.network.NettyConnection
+import org.kryptonmc.krypton.network.NetworkConnection
 import org.kryptonmc.krypton.packet.out.play.GameEventTypes
-import org.kryptonmc.krypton.network.PacketSendListener
 import org.kryptonmc.krypton.network.chat.RichChatType
 import org.kryptonmc.krypton.network.chat.OutgoingChatMessage
 import org.kryptonmc.krypton.network.chat.RemoteChatSession
-import org.kryptonmc.krypton.packet.out.play.PacketOutAbilities
+import org.kryptonmc.krypton.packet.Packet
+import org.kryptonmc.krypton.packet.out.play.PacketOutDisconnect
 import org.kryptonmc.krypton.packet.out.play.PacketOutGameEvent
 import org.kryptonmc.krypton.packet.out.play.PacketOutOpenBook
 import org.kryptonmc.krypton.packet.out.play.PacketOutParticle
+import org.kryptonmc.krypton.packet.out.play.PacketOutPlayerInfoRemove
+import org.kryptonmc.krypton.packet.out.play.PacketOutPlayerInfoUpdate
 import org.kryptonmc.krypton.packet.out.play.PacketOutPluginMessage
 import org.kryptonmc.krypton.packet.out.play.PacketOutResourcePack
 import org.kryptonmc.krypton.packet.out.play.PacketOutSetCamera
 import org.kryptonmc.krypton.packet.out.play.PacketOutSetContainerSlot
-import org.kryptonmc.krypton.packet.out.play.PacketOutSetEntityMetadata
 import org.kryptonmc.krypton.packet.out.play.PacketOutSetHealth
+import org.kryptonmc.krypton.packet.out.play.PacketOutSpawnPlayer
 import org.kryptonmc.krypton.packet.out.play.PacketOutSystemChat
-import org.kryptonmc.krypton.packet.out.play.PacketOutTeleportEntity
 import org.kryptonmc.krypton.statistic.KryptonStatisticsTracker
+import org.kryptonmc.krypton.util.ImmutableLists
 import org.kryptonmc.krypton.util.InteractionResult
 import org.kryptonmc.krypton.world.KryptonWorld
 import org.kryptonmc.krypton.world.block.state.KryptonBlockState
+import org.kryptonmc.krypton.world.scoreboard.KryptonScoreboard
 import org.kryptonmc.nbt.CompoundTag
-import java.net.InetSocketAddress
+import java.net.SocketAddress
 import java.time.Instant
 import java.util.UUID
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class KryptonPlayer(
-    override val connection: NettyConnection,
+    override val connection: NetworkConnection,
     override val profile: GameProfile,
-    world: KryptonWorld,
-    override val address: InetSocketAddress
+    world: KryptonWorld
 ) : KryptonLivingEntity(world), BasePlayer {
 
     override val type: KryptonEntityType<KryptonPlayer>
@@ -109,23 +109,29 @@ class KryptonPlayer(
     override var uuid: UUID
         get() = profile.uuid
         set(_) = Unit // Player UUIDs are read only.
+    override val address: SocketAddress
+        get() = connection.connectAddress()
     override val ping: Int
         get() = connection.latency()
 
     override val hungerSystem: PlayerHungerSystem = PlayerHungerSystem(this)
     override val gameModeSystem: PlayerGameModeSystem = PlayerGameModeSystem(this)
-    val chunkViewingSystem: PlayerChunkViewingSystem = PlayerChunkViewingSystem(this)
+    private val chunkViewingSystem = PlayerChunkViewingSystem(this)
 
     override val abilities: Abilities = Abilities()
     override val inventory: KryptonPlayerInventory = KryptonPlayerInventory(this)
     override var openInventory: Inventory? = null
 
-    override val statisticsTracker: KryptonStatisticsTracker =
-        KryptonStatisticsTracker(this, server.worldManager.statsFolder().resolve("$uuid.json"))
+    override val statisticsTracker: KryptonStatisticsTracker = KryptonStatisticsTracker(this)
     override val itemCooldownTracker: KryptonCooldownTracker = KryptonCooldownTracker(this)
+
+    override var scoreboard: KryptonScoreboard = world.scoreboard
+    override val tabList: TabList = KryptonTabList(this)
 
     override var settings: KryptonPlayerSettings = KryptonPlayerSettings.DEFAULT
     private var lastActionTime = System.currentTimeMillis()
+
+    val chatTracker: PlayerChatTracker = PlayerChatTracker(this)
     private var chatSession: RemoteChatSession? = null
 
     private var camera: KryptonEntity = this
@@ -154,10 +160,6 @@ class KryptonPlayer(
         get() = data.get(MetadataKeys.Player.ADDITIONAL_HEARTS)
         set(value) = data.set(MetadataKeys.Player.ADDITIONAL_HEARTS, value)
 
-    init {
-        position = world.data.spawnPos().asPosition()
-    }
-
     override fun defineData() {
         super<KryptonLivingEntity>.defineData()
         data.define(MetadataKeys.Player.ADDITIONAL_HEARTS, 0F)
@@ -168,8 +170,8 @@ class KryptonPlayer(
         data.define(MetadataKeys.Player.RIGHT_SHOULDER, CompoundTag.EMPTY)
     }
 
-    override fun updateGameMode(mode: GameMode, cause: PlayerChangeGameModeEvent.Cause): PlayerChangeGameModeEvent? {
-        val event = gameModeSystem.changeGameMode(mode, cause)
+    override fun updateGameMode(mode: GameMode): PlayerChangeGameModeEvent? {
+        val event = gameModeSystem.changeGameMode(mode)
         if (event == null || !event.isAllowed()) return null
 
         connection.send(PacketOutGameEvent(GameEventTypes.CHANGE_GAMEMODE, mode.ordinal.toFloat()))
@@ -178,7 +180,6 @@ class KryptonPlayer(
         } else {
             camera = this
         }
-        onAbilitiesUpdate()
         return event
     }
 
@@ -202,7 +203,6 @@ class KryptonPlayer(
         gameModeSystem.tick()
         hungerSystem.tick()
         itemCooldownTracker.tick()
-        if (data.isDirty()) connection.send(PacketOutSetEntityMetadata(id, data.collectDirty()))
     }
 
     @Suppress("UnusedPrivateMember") // We will use the position later.
@@ -263,16 +263,29 @@ class KryptonPlayer(
         }
     }
 
-    override fun teleport(position: Position) {
-        this.position = position
-        val packet = PacketOutTeleportEntity.create(this)
-        connection.send(packet)
-        viewingSystem.sendToViewers(packet)
-        chunkViewingSystem.updateChunks()
+    override fun showScoreboard(scoreboard: Scoreboard) {
+        if (scoreboard !is KryptonScoreboard) return
+        this.scoreboard.removeViewer(this, true) // The player is no longer viewing the old scoreboard
+        this.scoreboard = scoreboard
+        scoreboard.addViewer(this) // The player is now viewing the new scoreboard
     }
 
-    override fun teleport(player: Player) {
-        teleport(player.position)
+    override fun resetScoreboard() {
+        showScoreboard(world.scoreboard)
+    }
+
+    override fun sendPositionUpdate(packet: Packet, old: Position, new: Position) {
+        super.sendPositionUpdate(packet, old, new)
+        updateMovementStatistics(new.x - old.x, new.y - old.y, new.z - old.z)
+        hungerSystem.updateMovementExhaustion(new.x - old.x, new.y - old.y, new.z - old.z)
+    }
+
+    fun sendInitialChunks() {
+        chunkViewingSystem.loadInitialChunks()
+    }
+
+    fun updateChunks() {
+        chunkViewingSystem.updateChunks()
     }
 
     override fun sendPluginMessage(channel: Key, message: ByteArray) {
@@ -286,9 +299,9 @@ class KryptonPlayer(
     override fun openBook(item: KryptonItemStack) {
         val slot = inventory.items.size + inventory.heldSlot
         val stateId = inventory.stateId()
-        connection.send(PacketOutSetContainerSlot(0, stateId, slot, item))
+        connection.send(PacketOutSetContainerSlot(0, stateId, slot.toShort(), item))
         connection.send(PacketOutOpenBook(hand))
-        connection.send(PacketOutSetContainerSlot(0, stateId, slot, inventory.mainHand))
+        connection.send(PacketOutSetContainerSlot(0, stateId, slot.toShort(), inventory.mainHand))
     }
 
     override fun pointers(): Pointers {
@@ -305,20 +318,14 @@ class KryptonPlayer(
     }
 
     override fun disconnect(text: Component) {
-        // We always use the play disconnect here because we should be in the play state by the time the player is constructed, and certainly
-        // by the time any plugin is able to access it.
-        connection.playHandler().disconnect(text)
+        connection.send(PacketOutDisconnect(text))
+        connection.disconnect(text)
     }
 
-    fun disconnect() {
+    fun onDisconnect() {
+        chatTracker.onDisconnect()
         vehicleSystem.ejectPassengers()
         // TODO: Stop sleeping if sleeping
-    }
-
-    override fun onAbilitiesUpdate() {
-        if (connection.inPlayState()) connection.send(PacketOutAbilities.create(abilities))
-        removeEffectParticles()
-        isInvisible = gameMode == GameMode.SPECTATOR
     }
 
     fun updateMovementStatistics(deltaX: Double, deltaY: Double, deltaZ: Double) {
@@ -364,14 +371,7 @@ class KryptonPlayer(
 
     fun sendSystemMessage(message: Component, overlay: Boolean) {
         if (!acceptsSystemMessages(overlay)) return
-        connection.send(PacketOutSystemChat(message, overlay), PacketSendListener.sendOnFailure {
-            if (acceptsSystemMessages(false)) {
-                val notDelivered = Component.text(KryptonAdventure.toPlainText(message, 256), NamedTextColor.YELLOW)
-                PacketOutSystemChat(Component.translatable("multiplayer.message_not_delivered", NamedTextColor.RED, notDelivered), false)
-            } else {
-                null
-            }
-        })
+        connection.send(PacketOutSystemChat(message, overlay))
     }
 
     fun sendChatMessage(message: OutgoingChatMessage, filter: Boolean, type: RichChatType.Bound) {
@@ -383,7 +383,7 @@ class KryptonPlayer(
         return settings.filterText || target.settings.filterText
     }
 
-    private fun acceptsSystemMessages(overlay: Boolean): Boolean = if (settings.chatVisibility == ChatVisibility.HIDDEN) overlay else true
+    fun acceptsSystemMessages(overlay: Boolean): Boolean = if (settings.chatVisibility == ChatVisibility.HIDDEN) overlay else true
 
     fun acceptsChatMessages(): Boolean = settings.chatVisibility == ChatVisibility.FULL
 
@@ -394,6 +394,23 @@ class KryptonPlayer(
     }
 
     override fun isOnline(): Boolean = server.getPlayer(uuid) === this
+
+    override fun showToViewer(viewer: KryptonPlayer) {
+        viewer.connection.send(PacketOutPlayerInfoUpdate.createPlayerInitializing(ImmutableLists.of(this)))
+        super.showToViewer(viewer)
+    }
+
+    override fun hideFromViewer(viewer: KryptonPlayer) {
+        super.hideFromViewer(viewer)
+        viewer.connection.send(PacketOutPlayerInfoRemove(this))
+    }
+
+    override fun sendPacketToViewersAndSelf(packet: Packet) {
+        connection.send(packet)
+        super.sendPacketToViewersAndSelf(packet)
+    }
+
+    override fun getSpawnPacket(): Packet = PacketOutSpawnPlayer.create(this)
 
     companion object {
 

@@ -1,41 +1,31 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
 import com.mojang.brigadier.context.StringRange
 import com.mojang.brigadier.suggestion.Suggestion
 import com.mojang.brigadier.suggestion.Suggestions
-import io.netty.buffer.ByteBuf
 import net.kyori.adventure.text.Component
 import org.kryptonmc.api.adventure.AdventureMessage
 import org.kryptonmc.krypton.adventure.KryptonAdventure
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.Packet
-import org.kryptonmc.krypton.util.readComponent
-import org.kryptonmc.krypton.util.readList
-import org.kryptonmc.krypton.util.readNullable
-import org.kryptonmc.krypton.util.readString
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.writeCollection
-import org.kryptonmc.krypton.util.writeComponent
-import org.kryptonmc.krypton.util.writeNullable
-import org.kryptonmc.krypton.util.writeString
-import org.kryptonmc.krypton.util.writeVarInt
 
 /**
  * Sent by the server as a response to the
@@ -49,15 +39,15 @@ import org.kryptonmc.krypton.util.writeVarInt
 @JvmRecord
 data class PacketOutCommandSuggestionsResponse(val id: Int, val suggestions: Suggestions) : Packet {
 
-    constructor(buf: ByteBuf) : this(buf.readVarInt(), readSuggestions(buf))
+    constructor(reader: BinaryReader) : this(reader.readVarInt(), readSuggestions(reader))
 
-    override fun write(buf: ByteBuf) {
-        buf.writeVarInt(id)
-        buf.writeVarInt(suggestions.range.start)
-        buf.writeVarInt(suggestions.range.length)
-        buf.writeCollection(suggestions.list) {
-            buf.writeString(it.text)
-            buf.writeNullable(it.tooltip) { buf, tooltip ->
+    override fun write(writer: BinaryWriter) {
+        writer.writeVarInt(id)
+        writer.writeVarInt(suggestions.range.start)
+        writer.writeVarInt(suggestions.range.length)
+        writer.writeCollection(suggestions.list) {
+            writer.writeString(it.text)
+            writer.writeNullable(it.tooltip) { buf, tooltip ->
                 val message = if (tooltip is AdventureMessage) tooltip.asComponent() else Component.text(tooltip.string)
                 buf.writeComponent(message)
             }
@@ -67,11 +57,13 @@ data class PacketOutCommandSuggestionsResponse(val id: Int, val suggestions: Sug
     companion object {
 
         @JvmStatic
-        private fun readSuggestions(buf: ByteBuf): Suggestions {
-            val start = buf.readVarInt()
-            val length = buf.readVarInt()
+        private fun readSuggestions(reader: BinaryReader): Suggestions {
+            val start = reader.readVarInt()
+            val length = reader.readVarInt()
             val range = StringRange.between(start, start + length)
-            val results = buf.readList { Suggestion(range, buf.readString(), buf.readNullable { KryptonAdventure.asMessage(buf.readComponent()) }) }
+            val results = reader.readList {
+                Suggestion(range, reader.readString(), reader.readNullable { KryptonAdventure.asMessage(reader.readComponent()) })
+            }
             return Suggestions(range, results)
         }
     }

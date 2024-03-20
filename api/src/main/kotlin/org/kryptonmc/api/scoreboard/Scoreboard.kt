@@ -1,16 +1,28 @@
 /*
- * This file is part of the Krypton API, licensed under the MIT license.
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors to the Krypton project.
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This project is licensed under the terms of the MIT license.
- * For more details, please reference the LICENSE file in the api top-level directory.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.api.scoreboard
 
 import net.kyori.adventure.text.Component
+import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.Contract
+import org.kryptonmc.api.Krypton
 import org.kryptonmc.api.scoreboard.criteria.Criterion
+import org.kryptonmc.internal.annotations.TypeFactory
 
 /**
  * A [Scoreboard] is a method of keeping track of scores.
@@ -29,11 +41,6 @@ public interface Scoreboard {
     public val teams: Collection<Team>
 
     /**
-     * All scores tracked by this scoreboard.
-     */
-    public val scores: Collection<Score>
-
-    /**
      * Gets the objective with the given [name], or returns null if there are
      * no objectives registered with this scoreboard with the given [name].
      *
@@ -50,15 +57,6 @@ public interface Scoreboard {
      * @return the registered objective, or null if not present
      */
     public fun getObjective(slot: DisplaySlot): Objective?
-
-    /**
-     * Gets all objectives with the given [criterion] that are registered with
-     * this scoreboard.
-     *
-     * @param criterion the criterion
-     * @return all objectives with the criterion
-     */
-    public fun getObjectives(criterion: Criterion): Set<Objective>
 
     /**
      * Creates a new builder for building an objective that will be registered
@@ -107,26 +105,6 @@ public interface Scoreboard {
      * @param slot the slot to clear
      */
     public fun clearSlot(slot: DisplaySlot)
-
-    /**
-     * Gets all scores with the given [name] that are tracked by this
-     * scoreboard, across all objectives.
-     *
-     * If the same [Score] has been added to multiple objectives, it will only
-     * appear once in the set. Duplicates will not be found in the set.
-     *
-     * @param name the name
-     * @return all scores with the name
-     */
-    public fun getScores(name: Component): Set<Score>
-
-    /**
-     * Removes all scores with the given [name] from the set of all scores
-     * tracked by this scoreboard.
-     *
-     * @param name the name
-     */
-    public fun removeScores(name: Component)
 
     /**
      * Gets the team with the given [name] if there is one registered with this
@@ -182,4 +160,22 @@ public interface Scoreboard {
      * @param team the team
      */
     public fun removeTeam(team: Team)
+
+    @ApiStatus.Internal
+    @TypeFactory
+    public interface Factory {
+
+        public fun create(): Scoreboard
+    }
+
+    public companion object {
+
+        /**
+         * Creates a new blank scoreboard, with no objectives or teams.
+         *
+         * @return a new blank scoreboard
+         */
+        @JvmStatic
+        public fun create(): Scoreboard = Krypton.factory<Factory>().create()
+    }
 }

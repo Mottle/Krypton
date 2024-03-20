@@ -1,25 +1,25 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.command.argument.serializer
 
 import com.mojang.brigadier.arguments.FloatArgumentType
-import io.netty.buffer.ByteBuf
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 
 /**
  * Float argument types are serialized with flags indicating if the minimum
@@ -34,18 +34,18 @@ import io.netty.buffer.ByteBuf
  */
 object FloatArgumentSerializer : FlaggedArgumentSerializer<FloatArgumentType> {
 
-    override fun read(buf: ByteBuf, flags: Int): FloatArgumentType {
+    override fun read(reader: BinaryReader, flags: Int): FloatArgumentType {
         if (flags == 0) return FloatArgumentType.floatArg() // No flags, so both min and max are absent
-        val minimum = if (flags and 1 != 0) buf.readFloat() else -Float.MAX_VALUE
-        val maximum = if (flags and 2 != 0) buf.readFloat() else Float.MAX_VALUE
+        val minimum = if (flags and 1 != 0) reader.readFloat() else -Float.MAX_VALUE
+        val maximum = if (flags and 2 != 0) reader.readFloat() else Float.MAX_VALUE
         return FloatArgumentType.floatArg(minimum, maximum)
     }
 
-    override fun write(buf: ByteBuf, value: FloatArgumentType) {
+    override fun write(writer: BinaryWriter, value: FloatArgumentType) {
         val writeMin = value.minimum != -Float.MAX_VALUE
         val writeMax = value.maximum != Float.MAX_VALUE
-        buf.writeByte(createFlags(writeMin, writeMax))
-        if (writeMin) buf.writeFloat(value.minimum)
-        if (writeMax) buf.writeFloat(value.maximum)
+        writer.writeByte(createFlags(writeMin, writeMax))
+        if (writeMin) writer.writeFloat(value.minimum)
+        if (writeMax) writer.writeFloat(value.maximum)
     }
 }

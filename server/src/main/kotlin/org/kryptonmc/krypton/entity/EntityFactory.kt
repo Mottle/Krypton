@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity
 
@@ -87,6 +86,12 @@ import org.kryptonmc.krypton.world.KryptonWorld
 import org.kryptonmc.nbt.CompoundTag
 import java.util.function.Function
 
+/**
+ * This exists primarily because not all entities are implemented yet, and so this logic,
+ * which would normally be in KryptonEntityType using a factory, is here instead.
+ *
+ * This is used for instantiating new entities from type and NBT.
+ */
 object EntityFactory {
 
     private val LOGGER = LogManager.getLogger()
@@ -155,9 +160,21 @@ object EntityFactory {
         entry(EntityTypes.ZOMBIE, ::KryptonZombie)
     )
 
+    /**
+     * This does nothing more than lookup the entity's factory in the map using the type
+     * and instantiate the entity with the world. It will return an entity with all of its
+     * data set to the default values on initialisation.
+     */
     @JvmStatic
     fun create(type: EntityType<Entity>, world: KryptonWorld): KryptonEntity? = TYPE_MAP.get(type)?.apply(world)
 
+    /**
+     * This is used to create an entity from an NBT tag.
+     *
+     * It will try to resolve the entity's type from the given id, warning and returning null if
+     * it can't resolve the type, and then will use that to create the entity, and further, load
+     * its data from the nbt tag, if it is non-null.
+     */
     @JvmStatic
     fun create(world: KryptonWorld, id: String, nbt: CompoundTag?): KryptonEntity? {
         return try {

@@ -1,9 +1,15 @@
 plugins {
     `kotlin-dsl`
+    `java-gradle-plugin`
 }
 
 dependencies {
-    implementation(libs.plugin.indra)
+    // Dependencies for downloads plugin
+    implementation(libs.apache.httpclient)
+    implementation(libs.gson)
+    implementation(libs.grgit)
+
+    // Plugins
     implementation(libs.plugin.licenser)
     implementation(libs.plugin.kotlin)
     implementation(libs.plugin.dokka)
@@ -11,14 +17,17 @@ dependencies {
     implementation(libs.plugin.vanillaGradle)
     implementation(libs.plugin.shadow)
     implementation(libs.plugin.ksp)
-    implementation(libs.plugin.pitest)
 }
 
 dependencies {
     compileOnly(files(libs::class.java.protectionDomain.codeSource.location))
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+gradlePlugin {
+    plugins {
+        create("downloads-upload") {
+            id = "org.kryptonmc.downloads.upload"
+            implementationClass = "org.kryptonmc.downloads.UploadToApiPlugin"
+        }
+    }
 }

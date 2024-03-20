@@ -1,34 +1,25 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.network.forwarding
 
 import com.google.common.net.InetAddresses
-import io.netty.buffer.ByteBuf
-import kotlinx.collections.immutable.PersistentList
-import org.kryptonmc.api.auth.ProfileProperty
-import org.kryptonmc.krypton.auth.KryptonProfileProperty
-import org.kryptonmc.krypton.util.readAvailableBytes
-import org.kryptonmc.krypton.util.readNullable
-import org.kryptonmc.krypton.util.readPersistentList
-import org.kryptonmc.krypton.util.readString
+import org.kryptonmc.krypton.network.buffer.BinaryReader
 import java.security.MessageDigest
-import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -36,15 +27,13 @@ object VelocityProxy {
 
     private const val SIGNATURE_ALGORITHM = "HmacSHA256"
     private const val SIGNATURE_BYTES = 32
-    const val MODERN_FORWARDING_WITH_KEY: Int = 2
+    private const val MODERN_FORWARDING_WITH_KEY = 2
     const val MAX_SUPPORTED_FORWARDING_VERSION: Int = MODERN_FORWARDING_WITH_KEY
 
     @JvmStatic
-    fun verifyIntegrity(buf: ByteBuf, secret: ByteArray): Boolean {
-        val signature = buf.readAvailableBytes(SIGNATURE_BYTES)
-
-        val data = ByteArray(buf.readableBytes())
-        buf.getBytes(buf.readerIndex(), data, 0, buf.readableBytes())
+    fun verifyIntegrity(reader: BinaryReader, secret: ByteArray): Boolean {
+        val signature = reader.readBytes(SIGNATURE_BYTES)
+        val data = reader.readAllBytes()
 
         val mac = Mac.getInstance(SIGNATURE_ALGORITHM)
         mac.init(SecretKeySpec(secret, SIGNATURE_ALGORITHM))
@@ -53,13 +42,11 @@ object VelocityProxy {
     }
 
     @JvmStatic
-    fun readData(buf: ByteBuf): VelocityForwardedData {
-        val address = InetAddresses.forString(buf.readString())
-        return VelocityForwardedData(address, UUID(buf.readLong(), buf.readLong()), buf.readString(16), readProperties(buf))
-    }
-
-    @JvmStatic
-    private fun readProperties(buf: ByteBuf): PersistentList<ProfileProperty> {
-        return buf.readPersistentList { KryptonProfileProperty(buf.readString(), buf.readString(), buf.readNullable(ByteBuf::readString)) }
+    fun readData(reader: BinaryReader): VelocityForwardedData {
+        val address = InetAddresses.forString(reader.readString())
+        val uuid = reader.readUUID()
+        val name = reader.readString()
+        require(name.length <= 16) { "Name too long! Max: 16" }
+        return VelocityForwardedData(address, uuid, name, reader.readProfileProperties())
     }
 }

@@ -1,29 +1,27 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.network.chat
 
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.krypton.network.Writable
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.util.crypto.SignatureUpdater
 import org.kryptonmc.krypton.util.crypto.SignatureValidator
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.writeVarInt
 import java.nio.ByteBuffer
 import java.util.Base64
 
@@ -56,9 +54,9 @@ data class MessageSignature(val bytes: ByteArray) {
 
         constructor(id: Int) : this(id, null)
 
-        override fun write(buf: ByteBuf) {
-            buf.writeVarInt(id + 1)
-            fullSignature?.let { write(buf, it) }
+        override fun write(writer: BinaryWriter) {
+            writer.writeVarInt(id + 1)
+            fullSignature?.let { write(writer, it) }
         }
 
         companion object {
@@ -66,9 +64,9 @@ data class MessageSignature(val bytes: ByteArray) {
             const val FULL_SIGNATURE_ID: Int = -1
 
             @JvmStatic
-            fun read(buf: ByteBuf): Packed {
-                val id = buf.readVarInt() - 1
-                return if (id == FULL_SIGNATURE_ID) Packed(MessageSignature.read(buf)) else Packed(id)
+            fun read(reader: BinaryReader): Packed {
+                val id = reader.readVarInt() - 1
+                return if (id == FULL_SIGNATURE_ID) Packed(MessageSignature.read(reader)) else Packed(id)
             }
         }
     }
@@ -78,15 +76,11 @@ data class MessageSignature(val bytes: ByteArray) {
         private const val BYTES = 256
 
         @JvmStatic
-        fun read(buf: ByteBuf): MessageSignature {
-            val bytes = ByteArray(BYTES)
-            buf.readBytes(bytes)
-            return MessageSignature(bytes)
-        }
+        fun read(reader: BinaryReader): MessageSignature = MessageSignature(reader.readBytes(BYTES))
 
         @JvmStatic
-        fun write(buf: ByteBuf, signature: MessageSignature) {
-            buf.writeBytes(signature.bytes)
+        fun write(writer: BinaryWriter, signature: MessageSignature) {
+            writer.writeBytes(signature.bytes)
         }
     }
 }

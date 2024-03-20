@@ -1,26 +1,23 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton
 
-import io.netty.channel.epoll.Epoll
-import io.netty.channel.kqueue.KQueue
-import io.netty.channel.unix.DomainSocketAddress
+import org.apache.commons.lang3.SystemUtils
 import org.apache.logging.log4j.LogManager
 import org.kryptonmc.api.event.GlobalEventNode
 import org.kryptonmc.api.scheduling.ExecutionType
@@ -36,8 +33,7 @@ import org.kryptonmc.krypton.entity.player.KryptonPlayer
 import org.kryptonmc.krypton.event.KryptonGlobalEventNode
 import org.kryptonmc.krypton.event.server.KryptonServerStartEvent
 import org.kryptonmc.krypton.event.server.KryptonServerStopEvent
-import org.kryptonmc.krypton.network.ConnectionManager
-import org.kryptonmc.krypton.network.ConnectionInitializer
+import org.kryptonmc.krypton.server.StatusManager
 import org.kryptonmc.krypton.packet.PacketRegistry
 import org.kryptonmc.krypton.plugin.KryptonPluginManager
 import org.kryptonmc.krypton.scheduling.KryptonScheduler
@@ -45,7 +41,9 @@ import org.kryptonmc.krypton.server.PlayerManager
 import org.kryptonmc.krypton.service.KryptonServicesManager
 import org.kryptonmc.krypton.user.KryptonUserManager
 import org.kryptonmc.krypton.network.PacketFraming
+import org.kryptonmc.krypton.network.socket.NetworkServer
 import org.kryptonmc.krypton.plugin.loader.PluginLoader
+import org.kryptonmc.krypton.server.InitContext
 import org.kryptonmc.krypton.ticking.TickDispatcher
 import org.kryptonmc.krypton.ticking.TickThreadProvider
 import org.kryptonmc.krypton.util.crypto.YggdrasilSessionKey
@@ -53,11 +51,10 @@ import org.kryptonmc.krypton.util.random.RandomSource
 import org.kryptonmc.krypton.world.KryptonWorld
 import org.kryptonmc.krypton.world.KryptonWorldManager
 import org.kryptonmc.krypton.world.chunk.KryptonChunk
-import org.kryptonmc.krypton.world.scoreboard.KryptonScoreboard
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.nio.file.Path
+import java.net.UnixDomainSocketAddress
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
@@ -66,32 +63,25 @@ import kotlin.math.max
  * This is the centre of operations here at Krypton Inc. Everything stems from
  * this class.
  */
-class KryptonServer(
-    override val config: KryptonConfig,
-    val profileCache: GameProfileCache,
-    worldFolder: Path
-) : BaseServer {
+class KryptonServer(override val config: KryptonConfig, val profileCache: GameProfileCache, initContext: InitContext) : BaseServer {
 
-    // TODO: Use a better registry access that is dynamically populated from data packs.
-    override val playerManager: PlayerManager = PlayerManager(this)
-    override val connectionManager: ConnectionManager = ConnectionManager(playerManager, config.status.motd, config.status.maxPlayers)
+    private val networkServer = NetworkServer(this)
+    override val playerManager: PlayerManager = PlayerManager(this, initContext.playerDataSerializer, initContext.statisticsSerializer)
+    val statusManager: StatusManager = StatusManager(playerManager, config.status.motd, config.status.maxPlayers)
 
     override val console: KryptonConsole = KryptonConsole(this)
-    override val scoreboard: KryptonScoreboard = KryptonScoreboard(this)
-
-    override val worldManager: KryptonWorldManager = KryptonWorldManager(this, worldFolder)
+    override val worldManager: KryptonWorldManager = KryptonWorldManager(this, initContext.worldDataSerializer, initContext.chunkLoader)
     override val commandManager: KryptonCommandManager = KryptonCommandManager()
     override val pluginManager: KryptonPluginManager = KryptonPluginManager()
     override val eventNode: GlobalEventNode = KryptonGlobalEventNode
     override val servicesManager: KryptonServicesManager = KryptonServicesManager(this)
     override val scheduler: KryptonScheduler = KryptonScheduler()
-    override val userManager: KryptonUserManager = KryptonUserManager(this)
+    override val userManager: KryptonUserManager = KryptonUserManager(this, initContext.playerDataSerializer)
     private val random = RandomSource.create()
 
     private val tickDispatcher = TickDispatcher<KryptonChunk>(TickThreadProvider.counter(), 1)
     @Volatile
     private var running = true
-    private var stopped = false
 
     init {
         PacketFraming.setCompressionThreshold(config.server.compressionThreshold)
@@ -101,8 +91,6 @@ class KryptonServer(
     fun tickDispatcher(): TickDispatcher<KryptonChunk> = tickDispatcher
 
     override fun isRunning(): Boolean = running
-
-    fun isStopped(): Boolean = stopped
 
     // The order of loading here is pretty important, as some things depend on
     // others to function properly.
@@ -154,8 +142,8 @@ class KryptonServer(
 
         // Determine the correct bind address (UNIX domain socket or standard internet socket).
         val bindAddress = if (config.server.ip.startsWith("unix:")) {
-            if (!Epoll.isAvailable() && !KQueue.isAvailable()) {
-                LOGGER.error("UNIX domain sockets are not supported on this operating system!")
+            if (!SystemUtils.IS_OS_UNIX) {
+                LOGGER.error("UNIX domain sockets are only supported on UNIX-like systems!")
                 return false
             }
             if (config.proxy.mode == ProxyCategory.Mode.NONE) {
@@ -163,19 +151,20 @@ class KryptonServer(
                 return false
             }
             LOGGER.info("Using UNIX domain socket ${config.server.ip}")
-            DomainSocketAddress(config.server.ip.substring("unix:".length))
+            UnixDomainSocketAddress.of(config.server.ip)
         } else {
             InetSocketAddress(InetAddress.getByName(config.server.ip), config.server.port)
         }
 
-        // Start accepting connections
-        LOGGER.debug("Starting Netty...")
+        // Try binding to the port and start accepting connections
+        LOGGER.debug("Starting Network Server...")
         try {
-            ConnectionInitializer.run(this, bindAddress)
+            networkServer.initialize(bindAddress)
         } catch (exception: IOException) {
             LOGGER.error("FAILED TO BIND TO PORT ${config.server.port}!", exception)
             return false
         }
+        networkServer.start()
 
         setupAutosaveTasks()
 
@@ -188,7 +177,7 @@ class KryptonServer(
         if (config.world.autosaveInterval > 0) {
             val task = Runnable {
                 LOGGER.info("Auto save started.")
-                saveEverything(true, false, false)
+                saveEverything(true, false)
                 LOGGER.info("Auto save finished.")
             }
             scheduler.buildTask(task)
@@ -229,7 +218,7 @@ class KryptonServer(
 
     fun tick(startTime: Long) {
         scheduler.process()
-        connectionManager.tick(startTime)
+        statusManager.tick(startTime)
 
         worldManager.worlds.values.forEach { it.tick() }
         tickDispatcher.updateAndAwait(startTime)
@@ -238,15 +227,19 @@ class KryptonServer(
         tickDispatcher.refreshThreads(tickTime)
     }
 
-    private fun saveEverything(suppressLog: Boolean, flush: Boolean, forced: Boolean): Boolean {
+    private fun saveEverything(suppressLog: Boolean, forced: Boolean): Boolean {
         playerManager.saveAll()
-        return worldManager.saveAllChunks(suppressLog, flush, forced)
+        return worldManager.saveAllChunks(suppressLog, forced)
     }
 
     override fun stop() {
+        if (!running) {
+            // We are already shutting down, don't try to shut down again.
+            return
+        }
+
         try {
             running = false
-            stopped = true
             stopServer()
         } catch (exception: Throwable) {
             LOGGER.error("Error whilst attempting to stop the server!", exception)
@@ -256,8 +249,7 @@ class KryptonServer(
     private fun stopServer() {
         // Stop server and shut down session manager (disconnecting all players)
         LOGGER.info("Starting shutdown for Krypton version ${KryptonPlatform.version}...")
-        running = false
-        ConnectionInitializer.shutdown()
+        networkServer.stop()
         tickDispatcher.shutdown()
 
         // Save data
@@ -267,7 +259,7 @@ class KryptonServer(
 
         LOGGER.info("Saving worlds...")
         worldManager.worlds.values.forEach { it.doNotSave = false }
-        worldManager.saveAllChunks(false, true, false)
+        worldManager.saveAllChunks(false, false)
         worldManager.worlds.values.forEach {
             try {
                 it.close()
@@ -280,7 +272,7 @@ class KryptonServer(
         LOGGER.info("Shutting down plugins and unregistering listeners...")
         eventNode.fire(KryptonServerStopEvent)
 
-        // Shut down scheduler
+        // Say goodbye :)
         LOGGER.info("Goodbye")
 
         // Manually shut down Log4J 2 here so it doesn't shut down before we've finished logging

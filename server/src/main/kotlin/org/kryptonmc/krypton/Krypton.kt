@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton
 
@@ -28,8 +27,14 @@ import org.apache.logging.log4j.LogManager
 import org.kryptonmc.krypton.auth.GameProfileCache
 import org.kryptonmc.krypton.config.KryptonConfig
 import org.kryptonmc.krypton.server.Bootstrap
+import org.kryptonmc.krypton.server.InitContext
+import org.kryptonmc.krypton.server.StatisticsSerializer
 import org.kryptonmc.krypton.ticking.TickSchedulerThread
 import org.kryptonmc.krypton.util.executor.DefaultUncaughtExceptionHandler
+import org.kryptonmc.krypton.world.chunk.VanillaChunkLoader
+import org.kryptonmc.krypton.world.data.DefaultPlayerDataSerializer
+import org.kryptonmc.krypton.world.data.DefaultWorldDataSerializer
+import java.nio.file.Files
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
@@ -88,7 +93,25 @@ private class KryptonCLI : CliktCommand(
         val cache = GameProfileCache(userCacheFile)
         cache.loadAll()
 
-        val server = KryptonServer(config, cache, worldFolder)
+        val defaultWorldFolder = worldFolder.resolve(config.world.name)
+
+        val playerDataFolder = defaultWorldFolder.resolve("playerdata")
+        if (config.advanced.serializePlayerData && !Files.exists(playerDataFolder)) {
+            try {
+                Files.createDirectories(playerDataFolder)
+            } catch (exception: Exception) {
+                logger.error("Unable to create player data directory!", exception)
+                return
+            }
+        }
+
+        val worldDataSerializer = DefaultWorldDataSerializer(worldFolder)
+        val playerDataSerializer = DefaultPlayerDataSerializer(playerDataFolder)
+        val statsSerializer = StatisticsSerializer(defaultWorldFolder.resolve("stats"))
+        val chunkLoader = VanillaChunkLoader(defaultWorldFolder)
+
+        val initContext = InitContext(statsSerializer, worldDataSerializer, playerDataSerializer, chunkLoader)
+        val server = KryptonServer(config, cache, initContext)
         if (!server.initialize()) {
             // We just return here if initialisation fails. The error will already have been logged.
             return

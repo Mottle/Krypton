@@ -1,49 +1,33 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
-import io.netty.buffer.ByteBuf
 import net.kyori.adventure.text.Component
 import org.kryptonmc.api.auth.GameProfile
 import org.kryptonmc.api.world.GameMode
 import org.kryptonmc.krypton.auth.KryptonGameProfile
 import org.kryptonmc.krypton.entity.player.KryptonPlayer
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.network.chat.RemoteChatSession
 import org.kryptonmc.krypton.packet.Packet
 import org.kryptonmc.krypton.util.ImmutableLists
 import org.kryptonmc.krypton.util.enumhelper.GameModes
-import org.kryptonmc.krypton.util.readComponent
-import org.kryptonmc.krypton.util.readEnumSet
-import org.kryptonmc.krypton.util.readList
-import org.kryptonmc.krypton.util.readNullable
-import org.kryptonmc.krypton.util.readProfileProperties
-import org.kryptonmc.krypton.util.readString
-import org.kryptonmc.krypton.util.readUUID
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.writeCollection
-import org.kryptonmc.krypton.util.writeComponent
-import org.kryptonmc.krypton.util.writeEnumSet
-import org.kryptonmc.krypton.util.writeNullable
-import org.kryptonmc.krypton.util.writeProfileProperties
-import org.kryptonmc.krypton.util.writeString
-import org.kryptonmc.krypton.util.writeUUID
-import org.kryptonmc.krypton.util.writeVarInt
 import java.util.EnumSet
 import java.util.UUID
 
@@ -57,28 +41,31 @@ data class PacketOutPlayerInfoUpdate(val actions: EnumSet<Action>, val entries: 
 
     constructor(action: Action, player: KryptonPlayer) : this(EnumSet.of(action), ImmutableLists.of(Entry(player)))
 
-    constructor(buf: ByteBuf) : this(buf, buf.readEnumSet())
+    constructor(reader: BinaryReader) : this(reader, reader.readEnumSet())
 
-    private constructor(buf: ByteBuf, actions: EnumSet<Action>) : this(actions, buf.readList {
-        val builder = EntryBuilder(it.readUUID())
+    private constructor(reader: BinaryReader, actions: EnumSet<Action>) : this(actions, reader.readList {
+        val builder = EntryBuilder(reader.readUUID())
         actions.forEach { action -> action.reader.read(it, builder) }
         builder.build()
     })
 
-    override fun write(buf: ByteBuf) {
-        buf.writeEnumSet(actions)
-        buf.writeCollection(entries) { entry ->
-            buf.writeUUID(entry.profileId)
-            actions.forEach { it.writer.write(buf, entry) }
+    override fun write(writer: BinaryWriter) {
+        writer.writeEnumSet(actions)
+        writer.writeCollection(entries) { entry ->
+            writer.writeUUID(entry.profileId)
+            actions.forEach { it.writer.write(writer, entry) }
         }
     }
 
     enum class Action(internal val reader: Reader, internal val writer: Writer) {
 
         ADD_PLAYER({ buf, builder ->
-            builder.profile(KryptonGameProfile.full(builder.profileId, buf.readString(16), buf.readProfileProperties()))
+            val name = buf.readString()
+            require(name.length <= 16) { "Player name too long! Max: 16" }
+            builder.profile(KryptonGameProfile.full(builder.profileId, name, buf.readProfileProperties()))
         }, { buf, entry ->
-            buf.writeString(entry.profile.name, 16)
+            require(entry.profile.name.length <= 16) { "Player name too long! Max: 16" }
+            buf.writeString(entry.profile.name)
             buf.writeProfileProperties(entry.profile.properties)
         }),
         INITIALIZE_CHAT({ buf, builder -> builder.chatSession(buf.readNullable(RemoteChatSession.Data::read)) },
@@ -87,18 +74,17 @@ data class PacketOutPlayerInfoUpdate(val actions: EnumSet<Action>, val entries: 
             { buf, entry -> buf.writeVarInt(entry.gameMode.ordinal) }),
         UPDATE_LISTED({ buf, builder -> builder.listed(buf.readBoolean()) }, { buf, entry -> buf.writeBoolean(entry.listed) }),
         UPDATE_LATENCY({ buf, builder -> builder.latency(buf.readVarInt()) }, { buf, entry -> buf.writeVarInt(entry.latency) }),
-        UPDATE_DISPLAY_NAME({ buf, builder -> builder.displayName(buf.readNullable(ByteBuf::readComponent)) },
-            { buf, entry -> buf.writeNullable(entry.displayName, ByteBuf::writeComponent) })
-        ;
+        UPDATE_DISPLAY_NAME({ buf, builder -> builder.displayName(buf.readNullable(BinaryReader::readComponent)) },
+            { buf, entry -> buf.writeNullable(entry.displayName, BinaryWriter::writeComponent) });
 
         internal fun interface Reader {
 
-            fun read(buf: ByteBuf, builder: EntryBuilder)
+            fun read(reader: BinaryReader, builder: EntryBuilder)
         }
 
         internal fun interface Writer {
 
-            fun write(buf: ByteBuf, entry: Entry)
+            fun write(writer: BinaryWriter, entry: Entry)
         }
 
         companion object {

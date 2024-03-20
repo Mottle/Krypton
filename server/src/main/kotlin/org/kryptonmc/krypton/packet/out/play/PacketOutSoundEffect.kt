@@ -1,34 +1,30 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
-import io.netty.buffer.ByteBuf
 import net.kyori.adventure.sound.Sound
 import org.kryptonmc.api.effect.sound.SoundEvent
 import org.kryptonmc.krypton.effect.sound.KryptonSoundEvent
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.Packet
 import org.kryptonmc.krypton.registry.KryptonRegistries
 import org.kryptonmc.krypton.registry.holder.Holder
-import org.kryptonmc.krypton.util.readById
-import org.kryptonmc.krypton.util.readEnum
-import org.kryptonmc.krypton.util.writeEnum
-import org.kryptonmc.krypton.util.writeId
 
 @JvmRecord
 data class PacketOutSoundEffect(
@@ -42,18 +38,18 @@ data class PacketOutSoundEffect(
     val seed: Long
 ) : Packet {
 
-    constructor(buf: ByteBuf) : this(buf.readById(KryptonRegistries.SOUND_EVENT.asHolderIdMap(), KryptonSoundEvent::read), buf.readEnum(),
-        buf.readInt(), buf.readInt(), buf.readInt(), buf.readFloat(), buf.readFloat(), buf.readLong())
+    constructor(reader: BinaryReader) : this(reader.readById(KryptonRegistries.SOUND_EVENT.asHolderIdMap(), KryptonSoundEvent::read),
+        reader.readEnum(), reader.readInt(), reader.readInt(), reader.readInt(), reader.readFloat(), reader.readFloat(), reader.readLong())
 
-    override fun write(buf: ByteBuf) {
-        buf.writeId(KryptonRegistries.SOUND_EVENT.asHolderIdMap(), event, KryptonSoundEvent::write)
-        buf.writeEnum(source)
-        buf.writeInt(x)
-        buf.writeInt(y)
-        buf.writeInt(z)
-        buf.writeFloat(volume)
-        buf.writeFloat(pitch)
-        buf.writeLong(seed)
+    override fun write(writer: BinaryWriter) {
+        writer.writeId(KryptonRegistries.SOUND_EVENT.asHolderIdMap(), event, KryptonSoundEvent::write)
+        writer.writeEnum(source)
+        writer.writeInt(x)
+        writer.writeInt(y)
+        writer.writeInt(z)
+        writer.writeFloat(volume)
+        writer.writeFloat(pitch)
+        writer.writeLong(seed)
     }
 
     companion object {

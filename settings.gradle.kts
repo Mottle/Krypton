@@ -1,11 +1,9 @@
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
-enableFeaturePreview("VERSION_CATALOGS")
 
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
         maven("https://repo.kryptonmc.org/releases")
-        maven("https://repo.velocitypowered.com/snapshots/")
         maven("https://oss.sonatype.org/content/groups/public/")
         maven("https://repo.kryptonmc.org/snapshots")
         maven("https://s01.oss.sonatype.org/content/repositories/snapshots/")
@@ -24,6 +22,10 @@ pluginManagement {
         maven("https://repo.spongepowered.org/repository/maven-public/")
         gradlePluginPortal()
     }
+}
+
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.4.0"
 }
 
 rootProject.name = "krypton"

@@ -1,69 +1,79 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
-import io.netty.buffer.ByteBuf
 import net.kyori.adventure.text.Component
 import org.kryptonmc.api.scoreboard.Objective
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.Packet
-import org.kryptonmc.krypton.util.readComponent
-import org.kryptonmc.krypton.util.readString
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.writeComponent
-import org.kryptonmc.krypton.util.writeString
-import org.kryptonmc.krypton.util.writeVarInt
 
 /**
  * Tells the client to perform an action to an objective for a scoreboard.
  */
 @JvmRecord
-data class PacketOutUpdateObjectives(val name: String, val action: Int, val displayName: Component, val renderType: Int) : Packet {
+data class PacketOutUpdateObjectives(val name: String, val action: Byte, val displayName: Component, val renderType: Int) : Packet {
 
-    constructor(buf: ByteBuf) : this(buf, buf.readString(), buf.readByte().toInt())
+    init {
+        require(name.length <= 16) { "Objective name too long! Max: 16" }
+    }
 
-    private constructor(buf: ByteBuf, name: String, action: Int) : this(
+    constructor(reader: BinaryReader) : this(reader, reader.readString(), reader.readByte())
+
+    private constructor(reader: BinaryReader, name: String, action: Byte) : this(
         name,
         action,
-        if (action != Actions.REMOVE) buf.readComponent() else Component.empty(),
-        if (action != Actions.REMOVE) buf.readVarInt() else 0
+        if (action != Actions.REMOVE) reader.readComponent() else Component.empty(),
+        if (action != Actions.REMOVE) reader.readVarInt() else 0
     )
 
-    override fun write(buf: ByteBuf) {
-        buf.writeString(name, 16)
-        buf.writeByte(action)
+    override fun write(writer: BinaryWriter) {
+        writer.writeString(name)
+        writer.writeByte(action)
         if (action != Actions.REMOVE) {
-            buf.writeComponent(displayName)
-            buf.writeVarInt(renderType)
+            writer.writeComponent(displayName)
+            writer.writeVarInt(renderType)
         }
     }
 
     object Actions {
 
-        const val CREATE: Int = 0
-        const val REMOVE: Int = 1
-        const val UPDATE_TEXT: Int = 2
+        const val CREATE: Byte = 0
+        const val REMOVE: Byte = 1
+        const val UPDATE_TEXT: Byte = 2
     }
 
     companion object {
 
         @JvmStatic
-        fun updateText(objective: Objective): PacketOutUpdateObjectives =
-            PacketOutUpdateObjectives(objective.name, Actions.UPDATE_TEXT, objective.displayName, objective.renderType.ordinal)
+        fun create(objective: Objective): PacketOutUpdateObjectives = createOrRemove(objective, Actions.CREATE)
+
+        @JvmStatic
+        fun remove(objective: Objective): PacketOutUpdateObjectives = createOrRemove(objective, Actions.REMOVE)
+
+        @JvmStatic
+        private fun createOrRemove(objective: Objective, action: Byte): PacketOutUpdateObjectives {
+            return PacketOutUpdateObjectives(objective.name, action, objective.displayName, objective.renderType.ordinal)
+        }
+
+        @JvmStatic
+        fun updateText(objective: Objective): PacketOutUpdateObjectives {
+            return PacketOutUpdateObjectives(objective.name, Actions.UPDATE_TEXT, objective.displayName, objective.renderType.ordinal)
+        }
     }
 }

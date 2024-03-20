@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton
 
@@ -25,21 +24,19 @@ import net.kyori.adventure.text.Component
 import org.kryptonmc.api.Server
 import org.kryptonmc.krypton.adventure.PacketGroupingAudience
 import org.kryptonmc.krypton.entity.player.KryptonPlayer
-import org.kryptonmc.krypton.network.ConnectionManager
-import org.kryptonmc.krypton.packet.Packet
 import org.kryptonmc.krypton.server.PlayerManager
 import java.util.Collections
-import java.util.function.Predicate
 
 interface ServerAudience : Server, PacketGroupingAudience {
 
-    val connectionManager: ConnectionManager
     val playerManager: PlayerManager
 
     override val players: Collection<KryptonPlayer>
-        get() = Collections.unmodifiableCollection(playerManager.players())
+        get() = players()
 
-    override fun audiences(): Iterable<Audience> = players.asSequence().plus(console).asIterable()
+    override fun players(): Collection<KryptonPlayer> = Collections.unmodifiableCollection(playerManager.players())
+
+    override fun audiences(): Iterable<Audience> = players().asSequence().plus(console).asIterable()
 
     override fun sendMessage(message: Component) {
         super<PacketGroupingAudience>.sendMessage(message)
@@ -59,13 +56,5 @@ interface ServerAudience : Server, PacketGroupingAudience {
     override fun deleteMessage(signature: SignedMessage.Signature) {
         super<PacketGroupingAudience>.deleteMessage(signature)
         console.deleteMessage(signature)
-    }
-
-    override fun sendGroupedPacket(players: Collection<KryptonPlayer>, packet: Packet) {
-        connectionManager.sendGroupedPacket(players, packet)
-    }
-
-    override fun sendGroupedPacket(packet: Packet, filter: Predicate<KryptonPlayer>) {
-        connectionManager.sendGroupedPacket(players, packet, filter)
     }
 }

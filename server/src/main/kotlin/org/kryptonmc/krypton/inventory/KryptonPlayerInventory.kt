@@ -1,24 +1,22 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.inventory
 
-import io.netty.buffer.ByteBuf
 import net.kyori.adventure.key.Key
 import net.kyori.adventure.text.Component
 import org.kryptonmc.api.entity.ArmorSlot
@@ -29,10 +27,9 @@ import org.kryptonmc.api.item.ItemTypes
 import org.kryptonmc.krypton.entity.player.KryptonPlayer
 import org.kryptonmc.krypton.item.KryptonItemStack
 import org.kryptonmc.krypton.item.handler
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.out.play.PacketOutSetContainerSlot
 import org.kryptonmc.krypton.util.collection.FixedList
-import org.kryptonmc.krypton.util.writeItem
-import org.kryptonmc.krypton.util.writeVarInt
 import org.kryptonmc.krypton.world.block.state.KryptonBlockState
 import org.kryptonmc.nbt.ListTag
 import org.kryptonmc.nbt.compound
@@ -99,23 +96,23 @@ class KryptonPlayerInventory(override val owner: KryptonPlayer) : KryptonInvento
             in INVENTORY_SIZE until OFFHAND_SLOT -> items.set(index - INVENTORY_SIZE, item)
             OFFHAND_SLOT -> offHand = item
         }
-        owner.connection.send(PacketOutSetContainerSlot(id, incrementStateId(), index, item))
+        owner.connection.send(PacketOutSetContainerSlot(id.toByte(), incrementStateId(), index.toShort(), item))
     }
 
-    override fun write(buf: ByteBuf) {
-        buf.writeVarInt(SIZE)
-        buf.writeItem(crafting.get(CRAFTING_SIZE - 1))
+    override fun write(writer: BinaryWriter) {
+        writer.writeVarInt(SIZE)
+        writer.writeItem(crafting.get(CRAFTING_SIZE - 1))
         for (i in 0 until CRAFTING_GRID_SIZE) {
-            buf.writeItem(crafting.get(i))
+            writer.writeItem(crafting.get(i))
         }
-        armor.forEach(buf::writeItem)
+        armor.forEach(writer::writeItem)
         for (i in 0 until MAIN_SIZE) {
-            buf.writeItem(items.get(i + HOTBAR_SIZE))
+            writer.writeItem(items.get(i + HOTBAR_SIZE))
         }
         for (i in 0 until HOTBAR_SIZE) {
-            buf.writeItem(items.get(i))
+            writer.writeItem(items.get(i))
         }
-        buf.writeItem(offHand)
+        writer.writeItem(offHand)
     }
 
     fun getDestroySpeed(state: KryptonBlockState): Float {

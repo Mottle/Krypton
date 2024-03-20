@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
@@ -24,7 +23,6 @@ import com.mojang.brigadier.tree.ArgumentCommandNode
 import com.mojang.brigadier.tree.CommandNode
 import com.mojang.brigadier.tree.LiteralCommandNode
 import com.mojang.brigadier.tree.RootCommandNode
-import io.netty.buffer.ByteBuf
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import it.unimi.dsi.fastutil.ints.IntSet
 import it.unimi.dsi.fastutil.ints.IntSets
@@ -37,31 +35,23 @@ import org.kryptonmc.krypton.command.CommandSourceStack
 import org.kryptonmc.krypton.command.SuggestionProviders
 import org.kryptonmc.krypton.command.argument.ArgumentSerializers
 import org.kryptonmc.krypton.network.Writable
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.Packet
-import org.kryptonmc.krypton.util.readKey
-import org.kryptonmc.krypton.util.readList
-import org.kryptonmc.krypton.util.readString
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.readVarIntArray
-import org.kryptonmc.krypton.util.writeCollection
-import org.kryptonmc.krypton.util.writeKey
-import org.kryptonmc.krypton.util.writeString
-import org.kryptonmc.krypton.util.writeVarInt
-import org.kryptonmc.krypton.util.writeVarIntArray
 import java.util.function.BiPredicate
 import java.util.function.Predicate
 
 @JvmRecord
 data class PacketOutCommands(val nodes: List<Node>, val rootIndex: Int) : Packet {
 
-    constructor(buf: ByteBuf) : this(buf.readList(::readNode), buf.readVarInt()) {
+    constructor(reader: BinaryReader) : this(reader.readList(::readNode), reader.readVarInt()) {
         validateEntries(nodes) { node, indices -> node.canBuild(indices) }
         validateEntries(nodes) { node, indices -> node.canResolve(indices) }
     }
 
-    override fun write(buf: ByteBuf) {
-        buf.writeCollection(nodes) { it.write(buf) }
-        buf.writeVarInt(rootIndex)
+    override fun write(writer: BinaryWriter) {
+        writer.writeCollection(nodes) { it.write(writer) }
+        writer.writeVarInt(rootIndex)
     }
 
     @JvmRecord
@@ -72,11 +62,11 @@ data class PacketOutCommands(val nodes: List<Node>, val rootIndex: Int) : Packet
 
         fun canResolve(indices: IntSet): Boolean = children.all { !indices.contains(it) }
 
-        override fun write(buf: ByteBuf) {
-            buf.writeByte(flags)
-            buf.writeVarIntArray(children)
-            if (flags and FLAG_REDIRECT != 0) buf.writeVarInt(redirectNode)
-            data?.write(buf)
+        override fun write(writer: BinaryWriter) {
+            writer.writeByte(flags.toByte())
+            writer.writeVarIntArray(children)
+            if (flags and FLAG_REDIRECT != 0) writer.writeVarInt(redirectNode)
+            data?.write(writer)
         }
     }
 
@@ -85,8 +75,8 @@ data class PacketOutCommands(val nodes: List<Node>, val rootIndex: Int) : Packet
     @JvmRecord
     data class LiteralNodeData(val name: String) : NodeData {
 
-        override fun write(buf: ByteBuf) {
-            buf.writeString(name)
+        override fun write(writer: BinaryWriter) {
+            writer.writeString(name)
         }
     }
 
@@ -95,10 +85,10 @@ data class PacketOutCommands(val nodes: List<Node>, val rootIndex: Int) : Packet
 
         constructor(node: ArgumentCommandNode<CommandSourceStack, T>) : this(node.name, node.type, getId(node.customSuggestions))
 
-        override fun write(buf: ByteBuf) {
-            buf.writeString(name)
-            ArgumentSerializers.write(buf, type)
-            if (suggestionId != null) buf.writeKey(suggestionId)
+        override fun write(writer: BinaryWriter) {
+            writer.writeString(name)
+            ArgumentSerializers.write(writer, type)
+            if (suggestionId != null) writer.writeKey(suggestionId)
         }
     }
 
@@ -151,24 +141,24 @@ data class PacketOutCommands(val nodes: List<Node>, val rootIndex: Int) : Packet
         }
 
         @JvmStatic
-        private fun readNode(buf: ByteBuf): Node {
-            val flags = buf.readByte().toInt()
-            val children = buf.readVarIntArray()
-            val redirectNode = if (flags and FLAG_REDIRECT != 0) buf.readVarInt() else 0
-            return Node(flags, children, redirectNode, readNodeData(buf, flags))
+        private fun readNode(reader: BinaryReader): Node {
+            val flags = reader.readByte().toInt()
+            val children = reader.readVarIntArray()
+            val redirectNode = if (flags and FLAG_REDIRECT != 0) reader.readVarInt() else 0
+            return Node(flags, children, redirectNode, readNodeData(reader, flags))
         }
 
         @JvmStatic
-        private fun readNodeData(buf: ByteBuf, flags: Int): NodeData? {
+        private fun readNodeData(reader: BinaryReader, flags: Int): NodeData? {
             return when (flags and 3) {
                 2 -> {
-                    val name = buf.readString()
-                    val serializer = ArgumentSerializers.getById<ArgumentType<*>>(buf.readVarInt()) ?: return null
-                    val type = serializer.serializer.read(buf)
-                    val suggestionsType = if (flags and FLAG_SUGGESTIONS != 0) buf.readKey() else null
+                    val name = reader.readString()
+                    val serializer = ArgumentSerializers.getById<ArgumentType<*>>(reader.readVarInt()) ?: return null
+                    val type = serializer.serializer.read(reader)
+                    val suggestionsType = if (flags and FLAG_SUGGESTIONS != 0) reader.readKey() else null
                     return ArgumentNodeData(name, type, suggestionsType)
                 }
-                1 -> LiteralNodeData(buf.readString())
+                1 -> LiteralNodeData(reader.readString())
                 else -> null
             }
         }

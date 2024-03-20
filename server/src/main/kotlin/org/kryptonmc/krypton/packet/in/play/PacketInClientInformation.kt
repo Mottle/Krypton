@@ -1,57 +1,57 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.`in`.play
 
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.api.entity.MainHand
 import org.kryptonmc.api.entity.player.ChatVisibility
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.network.handlers.PlayPacketHandler
 import org.kryptonmc.krypton.packet.InboundPacket
-import org.kryptonmc.krypton.util.readEnum
-import org.kryptonmc.krypton.util.readString
-import org.kryptonmc.krypton.util.writeEnum
-import org.kryptonmc.krypton.util.writeString
 
 @JvmRecord
 data class PacketInClientInformation(
     val locale: String,
-    val viewDistance: Int,
+    val viewDistance: Byte,
     val chatVisibility: ChatVisibility,
     val chatColors: Boolean,
-    val skinSettings: Short,
+    val skinSettings: Byte,
     val mainHand: MainHand,
     val filterText: Boolean,
     val allowsListing: Boolean
 ) : InboundPacket<PlayPacketHandler> {
 
-    constructor(buf: ByteBuf) : this(buf.readString(16), buf.readByte().toInt(), buf.readEnum(), buf.readBoolean(), buf.readUnsignedByte(),
-        buf.readEnum(), buf.readBoolean(), buf.readBoolean())
+    init {
+        require(locale.length <= 16) { "Locale too long! Max: 16" }
+    }
 
-    override fun write(buf: ByteBuf) {
-        buf.writeString(locale, 16)
-        buf.writeByte(viewDistance)
-        buf.writeEnum(chatVisibility)
-        buf.writeBoolean(chatColors)
-        buf.writeByte(skinSettings.toInt())
-        buf.writeEnum(mainHand)
-        buf.writeBoolean(filterText)
-        buf.writeBoolean(allowsListing)
+    constructor(reader: BinaryReader) : this(reader.readString(), reader.readByte(), reader.readEnum(), reader.readBoolean(),
+        reader.readByte(), reader.readEnum(), reader.readBoolean(), reader.readBoolean())
+
+    override fun write(writer: BinaryWriter) {
+        writer.writeString(locale)
+        writer.writeByte(viewDistance)
+        writer.writeEnum(chatVisibility)
+        writer.writeBoolean(chatColors)
+        writer.writeByte(skinSettings)
+        writer.writeEnum(mainHand)
+        writer.writeBoolean(filterText)
+        writer.writeBoolean(allowsListing)
     }
 
     override fun handle(handler: PlayPacketHandler) {

@@ -1,35 +1,29 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity.player
 
-import io.netty.buffer.ByteBuf
 import net.kyori.adventure.text.Component
 import org.kryptonmc.krypton.network.Writable
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.util.ComponentException
 import org.kryptonmc.krypton.util.crypto.Encryption
 import org.kryptonmc.krypton.util.crypto.SignatureValidator
-import org.kryptonmc.krypton.util.readInstant
-import org.kryptonmc.krypton.util.readPublicKey
-import org.kryptonmc.krypton.util.readVarIntByteArray
-import org.kryptonmc.krypton.util.writeInstant
-import org.kryptonmc.krypton.util.writePublicKey
-import org.kryptonmc.krypton.util.writeVarIntByteArray
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.PublicKey
@@ -46,12 +40,16 @@ data class PlayerPublicKey(val data: Data) {
     @Suppress("ArrayInDataClass", "EqualsOrHashCode") // We want to keep the record-generated hash code.
     data class Data(val expiryTime: Instant, val key: PublicKey, val keySignature: ByteArray) : Writable {
 
-        constructor(buf: ByteBuf) : this(buf.readInstant(), buf.readPublicKey(), buf.readVarIntByteArray(MAX_KEY_SIGNATURE_SIZE))
+        init {
+            require(keySignature.size <= MAX_KEY_SIGNATURE_SIZE) { "Key signature too large! Max: $MAX_KEY_SIGNATURE_SIZE" }
+        }
 
-        override fun write(buf: ByteBuf) {
-            buf.writeInstant(expiryTime)
-            buf.writePublicKey(key)
-            buf.writeVarIntByteArray(keySignature)
+        constructor(reader: BinaryReader) : this(reader.readInstant(), reader.readPublicKey(), reader.readByteArray())
+
+        override fun write(writer: BinaryWriter) {
+            writer.writeInstant(expiryTime)
+            writer.writePublicKey(key)
+            writer.writeByteArray(keySignature)
         }
 
         fun validateSignature(validator: SignatureValidator, sessionId: UUID): Boolean = validator.validate(signedPayload(sessionId), keySignature)
@@ -68,8 +66,9 @@ data class PlayerPublicKey(val data: Data) {
 
         fun hasExpired(duration: Duration): Boolean = expiryTime.plus(duration).isBefore(Instant.now())
 
-        override fun equals(other: Any?): Boolean =
-            other is Data && expiryTime == other.expiryTime && key == other.key && keySignature.contentEquals(other.keySignature)
+        override fun equals(other: Any?): Boolean {
+            return other is Data && expiryTime == other.expiryTime && key == other.key && keySignature.contentEquals(other.keySignature)
+        }
 
         companion object {
 

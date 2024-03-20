@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity.system
 
@@ -25,13 +24,16 @@ import org.kryptonmc.api.world.GameMode
 import org.kryptonmc.krypton.entity.player.KryptonPlayer
 import org.kryptonmc.krypton.event.player.KryptonPlayerChangeGameModeEvent
 import org.kryptonmc.krypton.item.handler
+import org.kryptonmc.krypton.network.PacketGrouping
 import org.kryptonmc.krypton.packet.`in`.play.PacketInPlayerAction
+import org.kryptonmc.krypton.packet.out.play.PacketOutAbilities
 import org.kryptonmc.krypton.packet.out.play.PacketOutBlockUpdate
 import org.kryptonmc.krypton.packet.out.play.PacketOutPlayerInfoUpdate
 import org.kryptonmc.krypton.packet.out.play.PacketOutPlayerInfoUpdate.Action
 import org.kryptonmc.krypton.util.enumhelper.GameModes
 import org.kryptonmc.krypton.world.block.state.KryptonBlockState
 
+// TODO: Most of this logic is from vanilla, and we can probably get rid of it and replace it with something better.
 class PlayerGameModeSystem(private val player: KryptonPlayer) {
 
     private var gameMode = GameMode.SURVIVAL
@@ -76,13 +78,14 @@ class PlayerGameModeSystem(private val player: KryptonPlayer) {
         }
     }
 
-    fun changeGameMode(mode: GameMode, cause: PlayerChangeGameModeEvent.Cause): PlayerChangeGameModeEvent? {
+    fun changeGameMode(mode: GameMode): PlayerChangeGameModeEvent? {
         if (mode == gameMode) return null
 
-        val event = player.server.eventNode.fire(KryptonPlayerChangeGameModeEvent(player, gameMode, mode, cause))
+        val event = player.server.eventNode.fire(KryptonPlayerChangeGameModeEvent(player, gameMode, mode))
         if (!event.isAllowed()) return event
 
-        setGameMode(mode, event.result?.newGameMode ?: gameMode)
+        setGameMode(event.result?.newGameMode ?: mode, gameMode)
+        sendGameModeUpdate()
         return event
     }
 
@@ -90,8 +93,12 @@ class PlayerGameModeSystem(private val player: KryptonPlayer) {
         previousGameMode = previousMode
         gameMode = mode
         GameModes.updatePlayerAbilities(mode, player.abilities)
-        player.onAbilitiesUpdate()
-        player.server.connectionManager.sendGroupedPacket(PacketOutPlayerInfoUpdate(Action.UPDATE_GAME_MODE, player))
+        player.isInvisible = mode == GameMode.SPECTATOR
+    }
+
+    private fun sendGameModeUpdate() {
+        player.connection.send(PacketOutAbilities.create(player.abilities))
+        PacketGrouping.sendGroupedPacket(player.server, PacketOutPlayerInfoUpdate(Action.UPDATE_GAME_MODE, player))
     }
 
     fun handleBlockBreak(packet: PacketInPlayerAction) {
@@ -212,10 +219,11 @@ class PlayerGameModeSystem(private val player: KryptonPlayer) {
         if (!player.inventory.mainHand.type.handler().canAttackBlock(player, player.world, state, pos)) return false
 
         // Check some conditions first
-        if (!player.canUseGameMasterBlocks()) { // FIXME: Check if is instance of GameMasterBlock
-            player.world.sendBlockUpdated(pos, state, state)
-            return false
-        }
+        // TODO: We need the check for instance of GameMasterBlock for this to not break other things
+//        if (!player.canUseGameMasterBlocks()) {
+//            player.world.sendBlockUpdated(pos, state)
+//            return false
+//        }
         if (player.isBlockActionRestricted(pos)) return false
 
         // Call pre-destroy, try and remove the block, and if we changed the block, call destroy

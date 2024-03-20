@@ -1,35 +1,35 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.effect.particle.data
 
-import io.netty.buffer.ByteBuf
 import org.kryptonmc.api.util.Color
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 
 // This constant is used to transform an integer colour value (between 0 and 255 because it's RGB) to a floating point value (between 0.0 and 1.0)
 // and vice versa.
 private const val COLOR_ENCODING_VALUE = 255F
 
-internal fun ByteBuf.readParticleColor(): Color = Color(readColorValue(), readColorValue(), readColorValue())
+internal fun BinaryReader.readParticleColor(): Color = Color(readColorValue(), readColorValue(), readColorValue())
 
-private fun ByteBuf.readColorValue(): Int = (readFloat() * COLOR_ENCODING_VALUE).toInt()
+private fun BinaryReader.readColorValue(): Int = (readFloat() * COLOR_ENCODING_VALUE).toInt()
 
-internal fun ByteBuf.writeParticleColor(color: Color) {
+internal fun BinaryWriter.writeParticleColor(color: Color) {
     writeFloat(if (color.red == 0) Float.MIN_VALUE else color.red.toFloat() / COLOR_ENCODING_VALUE)
     writeFloat(color.green.toFloat() / COLOR_ENCODING_VALUE)
     writeFloat(color.blue.toFloat() / COLOR_ENCODING_VALUE)

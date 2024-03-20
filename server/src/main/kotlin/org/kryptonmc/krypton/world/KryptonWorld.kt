@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.world
 
@@ -42,7 +41,10 @@ import org.kryptonmc.krypton.entity.EntityFactory
 import org.kryptonmc.krypton.entity.EntityManager
 import org.kryptonmc.krypton.entity.KryptonEntity
 import org.kryptonmc.krypton.entity.player.KryptonPlayer
-import org.kryptonmc.krypton.packet.Packet
+import org.kryptonmc.krypton.entity.tracking.DefaultEntityTracker
+import org.kryptonmc.krypton.entity.tracking.EntityTracker
+import org.kryptonmc.krypton.entity.tracking.EntityTypeTarget
+import org.kryptonmc.krypton.network.PacketGrouping
 import org.kryptonmc.krypton.packet.out.play.GameEventTypes
 import org.kryptonmc.krypton.packet.out.play.PacketOutBlockUpdate
 import org.kryptonmc.krypton.packet.out.play.PacketOutEntitySoundEffect
@@ -62,9 +64,9 @@ import org.kryptonmc.krypton.world.biome.BiomeManager
 import org.kryptonmc.krypton.world.block.KryptonBlock
 import org.kryptonmc.krypton.world.block.KryptonBlocks
 import org.kryptonmc.krypton.world.block.state.KryptonBlockState
-import org.kryptonmc.krypton.world.chunk.ChunkAccessor
+import org.kryptonmc.krypton.world.chunk.ChunkLoader
 import org.kryptonmc.krypton.world.chunk.ChunkManager
-import org.kryptonmc.krypton.world.chunk.data.ChunkStatus
+import org.kryptonmc.krypton.world.chunk.KryptonChunk
 import org.kryptonmc.krypton.world.chunk.flag.SetBlockFlag
 import org.kryptonmc.krypton.world.components.BaseWorld
 import org.kryptonmc.krypton.world.data.WorldData
@@ -74,15 +76,16 @@ import org.kryptonmc.krypton.world.fluid.KryptonFluids
 import org.kryptonmc.krypton.world.redstone.BatchingNeighbourUpdater
 import org.kryptonmc.krypton.world.rule.GameRuleKeys
 import org.kryptonmc.krypton.world.rule.WorldGameRules
-import java.util.concurrent.ConcurrentHashMap
+import org.kryptonmc.krypton.world.scoreboard.KryptonScoreboard
+import java.util.function.Consumer
+import java.util.function.Predicate
 
 class KryptonWorld(
     override val server: KryptonServer,
     override val data: WorldData,
     override val dimension: ResourceKey<World>,
     override val dimensionType: KryptonDimensionType,
-    override val seed: Long,
-    private val tickTime: Boolean
+    chunkLoader: ChunkLoader
 ) : BaseWorld, AutoCloseable {
 
     override val scheduler: KryptonScheduler = KryptonScheduler()
@@ -90,8 +93,16 @@ class KryptonWorld(
     override val registryHolder: RegistryHolder
         get() = KryptonDynamicRegistries.DynamicHolder
 
-    override val chunkManager: ChunkManager = ChunkManager(this)
+    val entityTracker: EntityTracker = DefaultEntityTracker(server.config.advanced.entityViewDistance)
     override val entityManager: EntityManager = EntityManager(this)
+    override val entities: Collection<KryptonEntity>
+        get() = entityTracker.entities()
+    override val players: Collection<KryptonPlayer>
+        get() = entityTracker.entitiesOfType(EntityTypeTarget.PLAYERS)
+
+    override val scoreboard: KryptonScoreboard = KryptonScoreboard()
+
+    override val chunkManager: ChunkManager = ChunkManager(this, chunkLoader)
     override val biomeManager: BiomeManager = BiomeManager(this, seed)
     override val random: RandomSource = RandomSource.create()
     private val threadSafeRandom: RandomSource = RandomSource.createThreadSafe()
@@ -103,7 +114,6 @@ class KryptonWorld(
         }
     private var skyDarken = 0
 
-    override val players: MutableSet<KryptonPlayer> = ConcurrentHashMap.newKeySet()
     var doNotSave: Boolean = false
 
     private var oldRainLevel = 0F
@@ -127,7 +137,7 @@ class KryptonWorld(
     init {
         updateSkyBrightness()
         prepareWeather()
-        scheduler.buildTask { sendGroupedPacket(PacketOutUpdateTime.create(data)) { it.world === this } }
+        scheduler.buildTask { PacketGrouping.sendGroupedPacket(players, PacketOutUpdateTime.create(data)) { it.world === this } }
             .delay(TaskTime.seconds(1))
             .period(TaskTime.seconds(1))
             .executionType(ExecutionType.SYNCHRONOUS)
@@ -163,6 +173,30 @@ class KryptonWorld(
         entityManager.removeEntity(entity)
     }
 
+    override fun <E : Entity> getEntitiesOfType(type: Class<E>): Collection<E> = entityTracker.entitiesOfType(type, null)
+
+    override fun <E : Entity> getEntitiesOfType(type: Class<E>, predicate: Predicate<E>): Collection<E> {
+        return entityTracker.entitiesOfType(type, predicate)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    override fun <E : Entity> getNearbyEntitiesOfType(position: Position, range: Double, type: Class<E>, callback: Consumer<E>) {
+        entityTracker.nearbyEntitiesOfType(position, range, EntityTypeTarget.ENTITIES) { if (type.isInstance(it)) callback.accept(it as E) }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    override fun <E : Entity> getNearbyEntitiesOfType(position: Position, range: Double, type: Class<E>): Collection<E> {
+        val result = ArrayList<E>()
+        entityTracker.nearbyEntitiesOfType(position, range, EntityTypeTarget.ENTITIES) { if (type.isInstance(it)) result.add(it as E) }
+        return result
+    }
+
+    override fun getNearbyEntities(position: Position, range: Double, callback: Consumer<Entity>) {
+        entityTracker.nearbyEntities(position, range) { callback.accept(it) }
+    }
+
+    override fun getNearbyEntities(position: Position, range: Double): Collection<Entity> = entityTracker.nearbyEntities(position, range)
+
     override fun worldEvent(pos: Vec3i, event: Int, data: Int, except: KryptonPlayer?) {
         server.playerManager.broadcast(PacketOutWorldEvent(event, pos, data, false), this, pos, 64.0, except)
     }
@@ -197,8 +231,8 @@ class KryptonWorld(
     fun canInteract(player: KryptonPlayer, x: Int, z: Int): Boolean = !server.isProtected(this, x, z, player)
 
     fun broadcastBlockDestroyProgress(sourceId: Int, position: Vec3i, state: Int) {
-        val packet = PacketOutSetBlockDestroyStage(sourceId, position, state)
-        server.connectionManager.sendGroupedPacket(packet) {
+        val packet = PacketOutSetBlockDestroyStage(sourceId, position, state.toByte())
+        PacketGrouping.sendGroupedPacket(server, packet) {
             if (it.world !== this || it.id == sourceId) return@sendGroupedPacket false
             val dx = position.x - it.position.x
             val dy = position.y - it.position.y
@@ -217,22 +251,24 @@ class KryptonWorld(
         return getChunk(SectionPos.blockToSection(x), SectionPos.blockToSection(z))?.getFluid(x, y, z) ?: KryptonFluids.EMPTY.defaultState
     }
 
-    override fun getChunk(x: Int, z: Int, requiredStatus: ChunkStatus, shouldCreate: Boolean): ChunkAccessor? = null // FIXME
+    override fun getChunk(x: Int, z: Int, shouldCreate: Boolean): KryptonChunk? = null // FIXME
 
     override fun setBlock(pos: Vec3i, state: KryptonBlockState, flags: Int, recursionLeft: Int): Boolean {
         if (isOutsideBuildHeight(pos)) return false
-//        if (isDebug) return false
+
         val chunk = getChunk(pos.chunkX(), pos.chunkZ()) ?: return false
         val block = state.block
+
         val oldState = chunk.setBlock(pos, state, flags and SetBlockFlag.BLOCK_MOVING != 0) ?: return false
         val newState = getBlock(pos)
+
         if (flags and SetBlockFlag.LIGHTING == 0 && newState !== oldState && canUpdateLighting(pos, oldState, newState)) {
             // TODO: Update lighting for block
         }
         if (newState === state) {
-            if (flags and SetBlockFlag.NOTIFY_CLIENTS != 0) sendBlockUpdated(pos, oldState, newState)
+            if (flags and SetBlockFlag.NOTIFY_CLIENTS != 0) sendBlockUpdated(pos, newState)
             if (flags and SetBlockFlag.UPDATE_NEIGHBOURS != 0) {
-                blockUpdated(pos, oldState.block)
+                neighbourUpdater.updateNeighboursAtExceptFromFacing(pos, oldState.block, null)
                 if (state.hasAnalogOutputSignal()) updateNeighbourForOutputSignal(pos, block)
             }
             if (flags and SetBlockFlag.UPDATE_NEIGHBOUR_SHAPES == 0 && recursionLeft > 0) {
@@ -241,21 +277,20 @@ class KryptonWorld(
                 state.updateNeighbourShapes(this, pos, maskedFlags, recursionLeft - 1)
                 state.updateIndirectNeighbourShapes(this, pos, maskedFlags, recursionLeft - 1)
             }
-            onBlockStateChange(pos, oldState, newState)
+            // TODO: Do POI updates
         }
         return true
     }
 
     private fun canUpdateLighting(pos: Vec3i, oldState: KryptonBlockState, newState: KryptonBlockState): Boolean {
         return newState.getLightBlock(this, pos) != oldState.getLightBlock(this, pos) ||
-                newState.lightEmission != oldState.lightEmission ||
-                newState.useShapeForLightOcclusion != oldState.useShapeForLightOcclusion
+                newState.lightEmission() != oldState.lightEmission() ||
+                newState.useShapeForLightOcclusion ||
+                oldState.useShapeForLightOcclusion
     }
 
-    @Suppress("UnusedPrivateMember")
-    fun sendBlockUpdated(pos: Vec3i, oldState: KryptonBlockState, newState: KryptonBlockState) {
-        server.connectionManager.sendGroupedPacket(players, PacketOutBlockUpdate(pos, newState))
-        // TODO: Update pathfinding mobs
+    fun sendBlockUpdated(pos: Vec3i, newState: KryptonBlockState) {
+        PacketGrouping.sendGroupedPacket(players, PacketOutBlockUpdate(pos, newState))
     }
 
     @Suppress("MemberVisibilityCanBePrivate")
@@ -275,32 +310,18 @@ class KryptonWorld(
     }
 
     @Suppress("MemberVisibilityCanBePrivate")
-    fun updateNeighboursAt(pos: Vec3i, block: KryptonBlock) {
-        neighbourUpdater.updateNeighboursAtExceptFromFacing(pos, block, null)
-    }
-
-    @Suppress("MemberVisibilityCanBePrivate")
     fun neighbourChanged(state: KryptonBlockState, pos: Vec3i, block: KryptonBlock, neighbourPos: Vec3i, moving: Boolean) {
         neighbourUpdater.neighbourChanged(state, pos, block, neighbourPos, moving)
     }
 
-    @Suppress("MemberVisibilityCanBePrivate", "UnusedPrivateMember")
-    fun onBlockStateChange(pos: Vec3i, oldState: KryptonBlockState, newState: KryptonBlockState) {
-        // TODO: Do POI updates
+    override fun removeBlock(pos: Vec3i, moving: Boolean): Boolean {
+        return setBlock(pos, getFluid(pos).asBlock(), SetBlockFlag.UPDATE_NOTIFY or if (moving) SetBlockFlag.BLOCK_MOVING else 0)
     }
-
-    override fun blockUpdated(pos: Vec3i, block: KryptonBlock) {
-        updateNeighboursAt(pos, block)
-    }
-
-    override fun removeBlock(pos: Vec3i, moving: Boolean): Boolean =
-        setBlock(pos, getFluid(pos).asBlock(), SetBlockFlag.UPDATE_NOTIFY or if (moving) SetBlockFlag.BLOCK_MOVING else 0)
 
     override fun destroyBlock(pos: Vec3i, drop: Boolean, entity: KryptonEntity?, recursionLeft: Int): Boolean {
         val state = getBlock(pos)
         if (state.isAir()) return false
         val fluid = getFluid(pos)
-//        if (state.block !is BaseFireBlock) worldEvent(pos, WorldEvent.DESTROY_BLOCK, KryptonBlock.idOf(state)) TODO
         if (drop) {
             // TODO: Drop items
         }
@@ -365,21 +386,20 @@ class KryptonWorld(
         }
 
         if (oldRainLevel != rainLevel) {
-            server.connectionManager.sendGroupedPacket(PacketOutGameEvent(GameEventTypes.RAIN_LEVEL_CHANGE, rainLevel)) { it.world === this }
+            PacketGrouping.sendGroupedPacket(server, PacketOutGameEvent(GameEventTypes.RAIN_LEVEL_CHANGE, rainLevel)) { it.world === this }
         }
         if (oldThunderLevel != thunderLevel) {
-            server.connectionManager.sendGroupedPacket(PacketOutGameEvent(GameEventTypes.THUNDER_LEVEL_CHANGE, thunderLevel)) { it.world === this }
+            PacketGrouping.sendGroupedPacket(server, PacketOutGameEvent(GameEventTypes.THUNDER_LEVEL_CHANGE, thunderLevel)) { it.world === this }
         }
         if (wasRaining != isRaining()) {
             val newRainState = if (wasRaining) GameEventTypes.END_RAINING else GameEventTypes.BEGIN_RAINING
-            server.connectionManager.sendGroupedPacket(PacketOutGameEvent(newRainState)) { it.world === this }
-            server.connectionManager.sendGroupedPacket(PacketOutGameEvent(GameEventTypes.RAIN_LEVEL_CHANGE, rainLevel)) { it.world === this }
-            server.connectionManager.sendGroupedPacket(PacketOutGameEvent(GameEventTypes.THUNDER_LEVEL_CHANGE, thunderLevel)) { it.world === this }
+            PacketGrouping.sendGroupedPacket(server, PacketOutGameEvent(newRainState)) { it.world === this }
+            PacketGrouping.sendGroupedPacket(server, PacketOutGameEvent(GameEventTypes.RAIN_LEVEL_CHANGE, rainLevel)) { it.world === this }
+            PacketGrouping.sendGroupedPacket(server, PacketOutGameEvent(GameEventTypes.THUNDER_LEVEL_CHANGE, thunderLevel)) { it.world === this }
         }
     }
 
     private fun tickTime() {
-        if (!tickTime) return
         data.time++
         if (gameRules().getBoolean(GameRuleKeys.DO_DAYLIGHT_CYCLE)) data.dayTime++
     }
@@ -400,16 +420,13 @@ class KryptonWorld(
 
     override fun generateSoundSeed(): Long = threadSafeRandom.nextLong()
 
-    fun save(flush: Boolean, skipSave: Boolean) {
-        if (skipSave) return
+    fun save() {
         // TODO: Save extra data for maps, raids, etc.
-        chunkManager.saveAllChunks(flush)
-        if (flush) entityManager.flush()
+        chunkManager.saveAllChunks()
     }
 
     override fun close() {
         chunkManager.close()
-        entityManager.close()
     }
 
     fun getRainLevel(delta: Float): Float = Maths.lerp(delta, oldRainLevel, rainLevel)
@@ -421,11 +438,9 @@ class KryptonWorld(
         return cachedPointers!!
     }
 
-    override fun sendGroupedPacket(players: Collection<KryptonPlayer>, packet: Packet) {
-        server.connectionManager.sendGroupedPacket(players, packet)
-    }
-
     override fun skyDarken(): Int = skyDarken
+
+    override fun players(): Collection<KryptonPlayer> = players
 
     override fun toString(): String = "KryptonWorld[${data.name}]"
 }

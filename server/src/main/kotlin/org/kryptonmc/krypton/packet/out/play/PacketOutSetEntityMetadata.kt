@@ -1,33 +1,30 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.packet.out.play
 
-import io.netty.buffer.ByteBuf
-import io.netty.handler.codec.DecoderException
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import org.kryptonmc.krypton.entity.metadata.MetadataHolder
 import org.kryptonmc.krypton.entity.metadata.MetadataSerializer
 import org.kryptonmc.krypton.entity.metadata.MetadataSerializers
+import org.kryptonmc.krypton.network.buffer.BinaryReader
+import org.kryptonmc.krypton.network.buffer.BinaryWriter
 import org.kryptonmc.krypton.packet.EntityPacket
-import org.kryptonmc.krypton.util.readVarInt
-import org.kryptonmc.krypton.util.writeVarInt
 
 /**
  * The way we construct and use metadata in Krypton is a bit strange, as unlike vanilla, we do not store a
@@ -41,47 +38,48 @@ import org.kryptonmc.krypton.util.writeVarInt
 @JvmRecord
 data class PacketOutSetEntityMetadata(override val entityId: Int, val packedEntries: Collection<MetadataHolder.Entry<*>>?) : EntityPacket {
 
-    constructor(buf: ByteBuf) : this(buf.readVarInt(), readEntries(buf))
+    constructor(reader: BinaryReader) : this(reader.readVarInt(), readEntries(reader))
 
-    override fun write(buf: ByteBuf) {
-        buf.writeVarInt(entityId)
-        writeEntries(buf, packedEntries)
+    override fun write(writer: BinaryWriter) {
+        writer.writeVarInt(entityId)
+        writeEntries(writer, packedEntries)
     }
 
     companion object {
 
-        private const val EOF_MARKER = 255
+        private const val EOF_MARKER: Byte = 0xFF.toByte()
 
         @JvmStatic
-        private fun writeEntries(buf: ByteBuf, entries: Collection<MetadataHolder.Entry<*>>?) {
-            entries?.forEach { writeEntry(buf, it) }
-            buf.writeByte(EOF_MARKER)
+        private fun writeEntries(writer: BinaryWriter, entries: Collection<MetadataHolder.Entry<*>>?) {
+            entries?.forEach { writeEntry(writer, it) }
+            writer.writeByte(EOF_MARKER)
         }
 
         @JvmStatic
-        private fun <T> writeEntry(buf: ByteBuf, entry: MetadataHolder.Entry<T>) {
+        private fun <T> writeEntry(writer: BinaryWriter, entry: MetadataHolder.Entry<T>) {
             val key = entry.key
-            buf.writeByte(key.id)
-            buf.writeVarInt(MetadataSerializers.getId(key.serializer))
-            key.serializer.write(buf, entry.value)
+            writer.writeByte(key.id)
+            writer.writeVarInt(MetadataSerializers.getId(key.serializer))
+            key.serializer.write(writer, entry.value)
         }
 
         @JvmStatic
-        private fun readEntries(buf: ByteBuf): List<MetadataHolder.Entry<*>>? {
+        private fun readEntries(reader: BinaryReader): List<MetadataHolder.Entry<*>>? {
             var entries: PersistentList.Builder<MetadataHolder.Entry<*>>? = null
-            var index = buf.readUnsignedByte().toInt()
+            var index = reader.readByte()
             while (index != EOF_MARKER) {
                 if (entries == null) entries = persistentListOf<MetadataHolder.Entry<*>>().builder()
-                val type = buf.readVarInt()
-                val serializer = MetadataSerializers.getById(type) ?: throw DecoderException("Unknown serializer type $type!")
-                entries.add(createEntry(buf, index, serializer))
-                index = buf.readUnsignedByte().toInt()
+                val type = reader.readVarInt()
+                val serializer = MetadataSerializers.getById(type) ?: error("Unknown serializer type $type!")
+                entries.add(createEntry(reader, index, serializer))
+                index = reader.readByte()
             }
             return entries?.build()
         }
 
         @JvmStatic
-        private fun <T> createEntry(buf: ByteBuf, id: Int, serializer: MetadataSerializer<T>): MetadataHolder.Entry<T> =
-            MetadataHolder.Entry(serializer.createKey(id), serializer.read(buf))
+        private fun <T> createEntry(reader: BinaryReader, id: Byte, serializer: MetadataSerializer<T>): MetadataHolder.Entry<T> {
+            return MetadataHolder.Entry(serializer.createKey(id), serializer.read(reader))
+        }
     }
 }

@@ -1,20 +1,19 @@
 /*
- * This file is part of the Krypton project, licensed under the GNU General Public License v3.0
+ * This file is part of the Krypton project, licensed under the Apache License v2.0
  *
- * Copyright (C) 2021-2022 KryptonMC and the contributors of the Krypton project
+ * Copyright (C) 2021-2023 KryptonMC and the contributors of the Krypton project
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package org.kryptonmc.krypton.entity.components
 
@@ -27,17 +26,17 @@ import org.kryptonmc.krypton.entity.metadata.MetadataKeys
 import org.kryptonmc.krypton.world.KryptonWorld
 import java.util.function.UnaryOperator
 
-interface BaseEntity : BaseDataHolder, NameableTeamMember, Rideable, Viewable, WaterPushable, Damageable, Interactable {
-
-    val isRemoved: Boolean
+interface BaseEntity : BaseDataHolder, NameableTeamMember, Rideable, WaterPushable, Damageable, Interactable {
 
     override val world: KryptonWorld
     override val server: KryptonServer
         get() = world.server
 
+    fun isRemoved(): Boolean
+
     fun maxAirTicks(): Int = DEFAULT_MAX_AIR
 
-    fun isAlive(): Boolean = !isRemoved
+    fun isAlive(): Boolean = !isRemoved()
 
     override fun defineData() {
         data.define(MetadataKeys.Entity.FLAGS, 0)
@@ -54,8 +53,9 @@ interface BaseEntity : BaseDataHolder, NameableTeamMember, Rideable, Viewable, W
 
     override fun getPermissionValue(permission: String): TriState = TriState.FALSE
 
-    override fun asHoverEvent(op: UnaryOperator<HoverEvent.ShowEntity>): HoverEvent<HoverEvent.ShowEntity> =
-        HoverEvent.showEntity(op.apply(HoverEvent.ShowEntity.of(type.key(), uuid, displayName)))
+    override fun asHoverEvent(op: UnaryOperator<HoverEvent.ShowEntity>): HoverEvent<HoverEvent.ShowEntity> {
+        return HoverEvent.showEntity(op.apply(HoverEvent.ShowEntity.of(type.key(), uuid, nameOrDescription())))
+    }
 
     companion object {
 
